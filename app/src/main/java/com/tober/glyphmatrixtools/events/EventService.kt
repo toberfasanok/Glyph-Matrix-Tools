@@ -6,7 +6,9 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -23,6 +25,7 @@ import com.tober.glyphmatrixtools.events.call.CallEventState
 import com.tober.glyphmatrixtools.events.notification.NotificationGlyphsService
 import com.tober.glyphmatrixtools.events.wake.ScreenWakeEvent
 import com.tober.glyphmatrixtools.events.wake.ScreenWakeGlyphsService
+import com.tober.glyphmatrixtools.glyph.Glyph
 import com.tober.glyphmatrixtools.glyph.GlyphMatrixController
 import com.tober.glyphmatrixtools.util.Constants
 import com.tober.glyphmatrixtools.util.PreferencesService
@@ -74,14 +77,6 @@ class EventService : Service() {
         }
     }
 
-    private val heartbeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val heartbeat = object : Runnable {
-        override fun run() {
-            Log.d(tag, "heartbeat")
-            heartbeatHandler.postDelayed(this, 1000L)
-        }
-    }
-
     // Preferences
     private lateinit var preferencesService: PreferencesService
 
@@ -94,6 +89,11 @@ class EventService : Service() {
 
     // Notification
     private lateinit var notificationGlyphsService: NotificationGlyphsService
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var notificationEventRunnable: Runnable? = null
+    private var pendingNotificationGlyphId: String? = null
+    private val notificationShowDelay = 1750L
 
     // Call
     private lateinit var callContactService: CallContactService
@@ -109,6 +109,33 @@ class EventService : Service() {
     private var activeCall: ActiveCall? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /**
+     * Active Glyph Display
+     *
+     * CALL > NOTIFICATION = SCREEN_WAKE
+     *
+     * CALL can replace anything.
+     * CALL cannot be replaced by NOTIFICATION or SCREEN_WAKE.
+     * NOTIFICATION can replace SCREEN_WAKE.
+     * SCREEN_WAKE can replace NOTIFICATION.
+     * SCREEN_WAKE can replace SCREEN_WAKE.
+     * NOTIFICATION can replace NOTIFICATION.
+     * Screen off clears only non-call glyphs.
+     * Call ended clears CALL glyph.
+     */
+    private enum class GlyphSource {
+        ScreenWake,
+        Notification,
+        Call
+    }
+
+    private data class ActiveGlyphDisplay(
+        val source: GlyphSource,
+        val glyphId: String
+    )
+
+    private var activeGlyphDisplay: ActiveGlyphDisplay? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -117,8 +144,6 @@ class EventService : Service() {
         super.onCreate()
 
         createNotificationChannel()
-
-        heartbeatHandler.post(heartbeat)
 
         // Preferences
         preferencesService = PreferencesService(applicationContext)
@@ -178,13 +203,19 @@ class EventService : Service() {
     override fun onDestroy() {
         Log.d(tag, "onDestroy")
 
-        heartbeatHandler.removeCallbacks(heartbeat)
-
         // Glyph Matrix
         glyphMatrixController.stop()
 
         // Screen Wake
         screenWakeEvent.stop()
+
+        // Notification
+        notificationEventRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        notificationEventRunnable = null
+        pendingNotificationGlyphId = null
 
         // Call
         callEventState.stop()
@@ -248,12 +279,9 @@ class EventService : Service() {
     }
 
     private fun onScreenOffEvent() {
-        if (activeCall != null) {
-            Log.d(tag, "Ignoring onScreenOffEvent while call is active")
-            return
-        }
+        cancelPendingNotificationEvent()
 
-        glyphMatrixController.clear()
+        clearCurrentGlyph()
     }
 
     // Screen Wake
@@ -279,9 +307,12 @@ class EventService : Service() {
             .getLong(Constants.PREFERENCES_SCREEN_WAKE_GLYPH_TIMEOUT, 5L)
             .coerceAtLeast(1L) * 1000L
 
-        glyphMatrixController.show(
-            glyph,
-            timeout
+        cancelPendingNotificationEvent()
+
+        showGlyphWithPriority(
+            source = GlyphSource.ScreenWake,
+            glyph = glyph,
+            timeout = timeout
         )
     }
 
@@ -316,10 +347,52 @@ class EventService : Service() {
             .getLong(Constants.PREFERENCES_NOTIFICATION_GLYPH_TIMEOUT, 5L)
             .coerceAtLeast(1L) * 1000L
 
-        glyphMatrixController.show(
+        scheduleNotificationEvent(
             glyph,
             timeout
         )
+    }
+
+    private fun scheduleNotificationEvent(
+        glyph: Glyph,
+        timeout: Long
+    ) {
+        if (pendingNotificationGlyphId == glyph.id) {
+            Log.d(tag, "Same notification glyph already pending")
+            return
+        }
+
+        notificationEventRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        notificationEventRunnable = null
+        pendingNotificationGlyphId = glyph.id
+
+        val runnable = Runnable {
+            Log.d(tag, "Showing delayed notification glyph")
+
+            showGlyphWithPriority(
+                source = GlyphSource.Notification,
+                glyph = glyph,
+                timeout = timeout
+            )
+
+            notificationEventRunnable = null
+            pendingNotificationGlyphId = null
+        }
+
+        notificationEventRunnable = runnable
+        mainHandler.postDelayed(runnable, notificationShowDelay)
+    }
+
+    private fun cancelPendingNotificationEvent() {
+        notificationEventRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        notificationEventRunnable = null
+        pendingNotificationGlyphId = null
     }
 
     // Call
@@ -358,7 +431,13 @@ class EventService : Service() {
                 return@launch
             }
 
-            glyphMatrixController.showPersistent(glyph)
+            cancelPendingNotificationEvent()
+
+            showGlyphWithPriority(
+                source = GlyphSource.Call,
+                glyph = glyph,
+                timeout = null
+            )
         }
     }
 
@@ -380,6 +459,94 @@ class EventService : Service() {
         }
 
         activeCall = null
+
+        clearCurrentGlyph(
+            force = true
+        )
+    }
+
+    // Active Glyph Display
+    private fun canReplaceCurrentGlyph(
+        source: GlyphSource
+    ): Boolean {
+        val current = activeGlyphDisplay ?: return true
+
+        return !(current.source == GlyphSource.Call && source != GlyphSource.Call)
+    }
+
+    private fun showGlyphWithPriority(
+        source: GlyphSource,
+        glyph: Glyph,
+        timeout: Long?
+    ) {
+        if (!canReplaceCurrentGlyph(source)) {
+            Log.d(tag, "Ignoring $source glyph because ${activeGlyphDisplay?.source} has priority")
+            return
+        }
+
+        val hasCurrentGlyph = activeGlyphDisplay != null
+
+        if (!hasCurrentGlyph) {
+            showGlyph(
+                source = source,
+                glyph = glyph,
+                timeout = timeout
+            )
+
+            return
+        }
+
+        activeGlyphDisplay = null
+
+        glyphMatrixController.clearFast {
+            showGlyph(
+                source = source,
+                glyph = glyph,
+                timeout = timeout
+            )
+        }
+    }
+
+    private fun showGlyph(
+        source: GlyphSource,
+        glyph: Glyph,
+        timeout: Long?
+    ) {
+        activeGlyphDisplay = ActiveGlyphDisplay(
+            source = source,
+            glyphId = glyph.id
+        )
+
+        if (timeout == null) {
+            glyphMatrixController.showPersistent(glyph)
+            return
+        }
+
+        glyphMatrixController.show(
+            glyph = glyph,
+            timeout = timeout,
+            onFinished = {
+                if (
+                    activeGlyphDisplay?.source == source &&
+                    activeGlyphDisplay?.glyphId == glyph.id
+                ) {
+                    activeGlyphDisplay = null
+                }
+            }
+        )
+    }
+
+    private fun clearCurrentGlyph(
+        force: Boolean = false
+    ) {
+        val current = activeGlyphDisplay
+
+        if (!force && current?.source == GlyphSource.Call) {
+            Log.d(tag, "Ignoring clear because Call glyph has priority")
+            return
+        }
+
+        activeGlyphDisplay = null
 
         glyphMatrixController.clear()
     }

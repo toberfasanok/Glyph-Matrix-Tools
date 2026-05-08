@@ -1,5 +1,6 @@
 package com.tober.glyphmatrixtools.glyph
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
@@ -7,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
@@ -39,6 +41,9 @@ class GlyphMatrixController(
 
     private var initialized = false
     private var manager: GlyphMatrixManager? = null
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private val wakeLockTimeout = 60 * 60 * 1000L
 
     private data class GlyphRequest(
         val glyph: Glyph,
@@ -94,6 +99,10 @@ class GlyphMatrixController(
         val frameDelay: Long
     )
 
+    private companion object {
+        private const val FAST_CIRCLE_ANIMATION_SPEED = 10L
+    }
+
     private val managerCallback = object : GlyphMatrixManager.Callback {
         override fun onServiceConnected(
             componentName: ComponentName?
@@ -138,8 +147,8 @@ class GlyphMatrixController(
     fun stop() {
         Log.d(tag, "Stop")
 
-        stopRunnable()
-        closeMatrix()
+        cancelScheduledDisplayWork()
+        finishDisplay()
 
         try {
             manager?.unInit()
@@ -150,17 +159,70 @@ class GlyphMatrixController(
         initialized = false
         manager = null
         pendingRequest = null
-        clearState()
+        resetActiveGlyphState()
+    }
+
+    fun clear() {
+        mainHandler.post {
+            val speed = preferencesService
+                .getLong(Constants.PREFERENCES_CIRCLE_ANIMATION_SPEED, 50L)
+                .coerceAtLeast(1L)
+
+            clearInternal(
+                speed = speed,
+                onCleared = {}
+            )
+        }
+    }
+
+    fun clearFast(
+        onCleared: () -> Unit = {}
+    ) {
+        mainHandler.post {
+            clearInternal(
+                speed = FAST_CIRCLE_ANIMATION_SPEED,
+                onCleared = onCleared
+            )
+        }
+    }
+
+    private fun clearInternal(
+        speed: Long,
+        onCleared: () -> Unit
+    ) {
+        pendingRequest = null
+
+        val glyph = currentGlyph
+        val bitmap = currentBitmap
+
+        cancelScheduledDisplayWork()
+
+        if (glyph?.imageAnimate == true && bitmap != null && initialized) {
+            hideAnimated(
+                glyphBitmap = bitmap,
+                speed = speed,
+                startRadius = currentRadius,
+                operation = {
+                    finishDisplay()
+                    onCleared()
+                }
+            )
+        } else {
+            finishDisplay()
+            onCleared()
+        }
     }
 
     fun show(
         glyph: Glyph,
-        timeout: Long?
+        timeout: Long?,
+        onFinished: () -> Unit = {}
     ) {
         mainHandler.post {
             showInternal(
                 glyph,
-                timeout
+                timeout,
+                onFinished = onFinished
             )
         }
     }
@@ -171,37 +233,16 @@ class GlyphMatrixController(
         mainHandler.post {
             showInternal(
                 glyph = glyph,
-                timeout = null
+                timeout = null,
+                onFinished = {}
             )
-        }
-    }
-
-    fun clear() {
-        mainHandler.post {
-            pendingRequest = null
-
-            val glyph = currentGlyph
-            val bitmap = currentBitmap
-
-            stopRunnable()
-
-            if (glyph?.imageAnimate == true && bitmap != null && initialized) {
-
-                hideAnimated(
-                    glyphBitmap = bitmap,
-                    speed = getCircleAnimationSpeed(),
-                    startRadius = currentRadius.coerceIn(minRadius, maxRadius),
-                    ::clearMatrixAndState
-                )
-            } else {
-                clearMatrixAndState()
-            }
         }
     }
 
     private fun showInternal(
         glyph: Glyph,
-        timeout: Long?
+        timeout: Long?,
+        onFinished: () -> Unit
     ) {
         if (glyph.image.isNullOrBlank()) return
 
@@ -214,10 +255,10 @@ class GlyphMatrixController(
             return
         }
 
-        stopRunnable()
-        closeMatrix()
-
         val bitmap = BitmapFactory.decodeFile(glyph.image) ?: return
+
+        prepareForNewDisplay()
+        acquireWakeLock()
 
         currentGlyph = glyph
         currentBitmap = bitmap
@@ -228,13 +269,19 @@ class GlyphMatrixController(
                 glyphBitmap = bitmap,
                 timeout = timeout,
                 speed = getCircleAnimationSpeed(),
-                ::clearMatrixAndState
+                operation = {
+                    finishDisplay()
+                    onFinished()
+                }
             )
         } else {
             showSimple(
                 glyphBitmap = bitmap,
                 timeout = timeout,
-                ::clearMatrixAndState
+                operation = {
+                    finishDisplay()
+                    onFinished()
+                }
             )
         }
     }
@@ -494,7 +541,19 @@ class GlyphMatrixController(
             .coerceAtLeast(1L)
     }
 
-    private fun stopRunnable() {
+    private fun prepareForNewDisplay() {
+        cancelScheduledDisplayWork()
+        closeGlyphMatrixSafely()
+        resetActiveGlyphState()
+    }
+
+    private fun finishDisplay() {
+        closeGlyphMatrixSafely()
+        resetActiveGlyphState()
+        releaseWakeLock()
+    }
+
+    private fun cancelScheduledDisplayWork() {
         clearRunnable?.let {
             mainHandler.removeCallbacks(it)
         }
@@ -507,22 +566,64 @@ class GlyphMatrixController(
         animationRunnable = null
     }
 
-    private fun closeMatrix() {
+    private fun closeGlyphMatrixSafely() {
         try {
             manager?.closeAppMatrix()
         } catch (e: Exception) {
-            Log.e(tag, "Failed to close matrix: $e")
+            Log.e(tag, "Failed to close Glyph Matrix: $e")
         }
     }
 
-    private fun clearState() {
+    private fun resetActiveGlyphState() {
         currentGlyph = null
         currentBitmap = null
         currentRadius = minRadius
     }
 
-    private fun clearMatrixAndState() {
-        closeMatrix()
-        clearState()
+    @SuppressLint("WakelockTimeout")
+    private fun acquireWakeLock(
+        timeout: Long? = null
+    ) {
+        try {
+            val powerManager = context.getSystemService(PowerManager::class.java)
+
+            if (wakeLock == null) {
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "GlyphMatrixTools:GlyphMatrixController"
+                ).apply {
+                    setReferenceCounted(false)
+                }
+            }
+
+            val lock = wakeLock ?: return
+
+            if (!lock.isHeld) {
+                if (timeout != null) {
+                    lock.acquire(timeout)
+                } else {
+                    lock.acquire(wakeLockTimeout)
+                }
+
+                Log.d(tag, "WakeLock acquired")
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to acquire WakeLock: $e")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let { lock ->
+                if (lock.isHeld) {
+                    lock.release()
+                    Log.d(tag, "WakeLock released")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to release WakeLock: $e")
+        } finally {
+            wakeLock = null
+        }
     }
 }
