@@ -22,7 +22,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -471,14 +471,24 @@ fun LazyListScope.glyphItemList(
 
             modifier = Modifier
                 .animateItem()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    shadowElevation = if (isDragging) 16f else 0f
-                }
+                .then(
+                    if (isDragging) {
+                        Modifier.graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            shadowElevation = 16f
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(top = 8.dp)
-                .onGloballyPositioned { coordinates ->
-                    itemHeightPx = coordinates.size.height.toFloat().coerceAtLeast(1f)
+                .onSizeChanged { size ->
+                    val height = size.height.toFloat().coerceAtLeast(1f)
+
+                    if (itemHeightPx != height) {
+                        itemHeightPx = height
+                    }
                 }
                 .pointerInput(item.id, state.glyphs.size) {
                     detectDragGesturesAfterLongPress(

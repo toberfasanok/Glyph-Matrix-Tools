@@ -16,7 +16,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
-import com.tober.glyphmatrixtools.events.call.CallAccessService
 import com.tober.glyphmatrixtools.ui.fields.SwitchField
 import com.tober.glyphmatrixtools.ui.glyph.DefaultGlyphItem
 import com.tober.glyphmatrixtools.ui.glyph.glyphItemList

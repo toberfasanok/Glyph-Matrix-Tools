@@ -1,6 +1,5 @@
 package com.tober.glyphmatrixtools.ui.glyph
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -32,6 +31,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -87,16 +87,25 @@ fun GlyphItem(
     val isNewGlyphItem = action is GlyphItemAction.Save
 
     // Image
-    val bitmap = remember(image) {
-        image
-            ?.takeIf { it.isNotBlank() }
-            ?.let { BitmapFactory.decodeFile(it) }
-    }
-
     val onClickGlyphImage = glyphImagePicker(
         onGlyphImagePicked = onGlyphImagePicked,
         onError = onGlyphImagePickError
     )
+
+    val density = LocalDensity.current
+    val imageSizePx = remember(imageSize, density) {
+        with(density) {
+            imageSize.roundToPx()
+        }
+    }
+
+    val bitmap = remember(image, imageSizePx) {
+        image
+            ?.takeIf { it.isNotBlank() }
+            ?.let {
+                loadGlyphImageBitmap(it, imageSizePx)
+            }
+    }
 
     // App
     var showGlyphAppPicker by remember {

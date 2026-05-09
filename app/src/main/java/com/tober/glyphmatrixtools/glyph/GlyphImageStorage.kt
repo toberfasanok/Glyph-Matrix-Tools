@@ -73,10 +73,12 @@ object GlyphImageStorage {
     fun deleteGlyphImage(
         path: String?
     ) {
+        if (path.isNullOrBlank()) return
+
+        GlyphImageCache.remove(path)
+
         runCatching {
-            path?.let { path ->
-                File(path).delete()
-            }
+            File(path).delete()
         }
     }
 

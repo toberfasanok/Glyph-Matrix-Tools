@@ -377,7 +377,7 @@ class EventService : Service() {
         val runnable = Runnable {
             if (isNotificationGlyphAlreadyDisplayed(glyph)) {
                 Log.d(tag, "Delayed Notification Glyph already displayed")
-        
+
                 notificationEventRunnable = null
                 pendingNotificationGlyphId = null
                 return@Runnable

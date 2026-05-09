@@ -1,4 +1,4 @@
-package com.tober.glyphmatrixtools.events.call
+package com.tober.glyphmatrixtools.ui.screens.call
 
 import android.Manifest
 import android.app.role.RoleManager
@@ -51,11 +51,5 @@ class CallAccessService(
             context,
             Manifest.permission.READ_CONTACTS
         ) == PackageManager.PERMISSION_GRANTED
-    }
-
-    fun hasRequiredAccess(): Boolean {
-        return hasCallScreeningRole() &&
-            hasPhoneStatePermission() &&
-            hasContactsPermission()
     }
 }
