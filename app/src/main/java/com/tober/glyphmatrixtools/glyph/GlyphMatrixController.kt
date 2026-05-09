@@ -162,7 +162,9 @@ class GlyphMatrixController(
         resetActiveGlyphState()
     }
 
-    fun clear() {
+    fun clear(
+        onCleared: () -> Unit = {}
+    ) {
         mainHandler.post {
             val speed = preferencesService
                 .getLong(Constants.PREFERENCES_CIRCLE_ANIMATION_SPEED, 50L)
@@ -170,7 +172,7 @@ class GlyphMatrixController(
 
             clearInternal(
                 speed = speed,
-                onCleared = {}
+                onCleared = onCleared
             )
         }
     }

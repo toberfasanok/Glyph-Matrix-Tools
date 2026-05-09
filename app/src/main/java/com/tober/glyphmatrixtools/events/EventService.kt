@@ -281,7 +281,7 @@ class EventService : Service() {
     private fun onScreenOffEvent() {
         cancelPendingNotificationEvent()
 
-        clearCurrentGlyph()
+        clearGlyph()
     }
 
     // Screen Wake
@@ -343,6 +343,11 @@ class EventService : Service() {
             return
         }
 
+        if (isNotificationGlyphAlreadyDisplayed(glyph)) {
+            Log.d(tag, "Notification Glyph already displayed")
+            return
+        }
+
         val timeout = preferencesService
             .getLong(Constants.PREFERENCES_NOTIFICATION_GLYPH_TIMEOUT, 5L)
             .coerceAtLeast(1L) * 1000L
@@ -370,6 +375,14 @@ class EventService : Service() {
         pendingNotificationGlyphId = glyph.id
 
         val runnable = Runnable {
+            if (isNotificationGlyphAlreadyDisplayed(glyph)) {
+                Log.d(tag, "Delayed Notification Glyph already displayed")
+        
+                notificationEventRunnable = null
+                pendingNotificationGlyphId = null
+                return@Runnable
+            }
+
             Log.d(tag, "Showing delayed notification glyph")
 
             showGlyphWithPriority(
@@ -393,6 +406,14 @@ class EventService : Service() {
 
         notificationEventRunnable = null
         pendingNotificationGlyphId = null
+    }
+
+    private fun isNotificationGlyphAlreadyDisplayed(
+        glyph: Glyph
+    ): Boolean {
+        val current = activeGlyphDisplay ?: return false
+
+        return current.source == GlyphSource.Notification && current.glyphId == glyph.id
     }
 
     // Call
@@ -460,7 +481,7 @@ class EventService : Service() {
 
         activeCall = null
 
-        clearCurrentGlyph(
+        clearGlyph(
             force = true
         )
     }
@@ -484,9 +505,7 @@ class EventService : Service() {
             return
         }
 
-        val hasCurrentGlyph = activeGlyphDisplay != null
-
-        if (!hasCurrentGlyph) {
+        if (activeGlyphDisplay == null) {
             showGlyph(
                 source = source,
                 glyph = glyph,
@@ -536,7 +555,7 @@ class EventService : Service() {
         )
     }
 
-    private fun clearCurrentGlyph(
+    private fun clearGlyph(
         force: Boolean = false
     ) {
         val current = activeGlyphDisplay
@@ -546,8 +565,13 @@ class EventService : Service() {
             return
         }
 
-        activeGlyphDisplay = null
-
-        glyphMatrixController.clear()
+        glyphMatrixController.clear {
+            if (
+                activeGlyphDisplay?.source == current?.source &&
+                activeGlyphDisplay?.glyphId == current?.glyphId
+            ) {
+                activeGlyphDisplay = null
+            }
+        }
     }
 }
