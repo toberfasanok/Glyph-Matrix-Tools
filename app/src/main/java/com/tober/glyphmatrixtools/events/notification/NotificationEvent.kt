@@ -17,6 +17,7 @@ class NotificationEvent : NotificationListenerService() {
         val packageName = statusBarNotification.packageName
         val contact = NotificationContactService.resolve(statusBarNotification.notification)
 
+        Log.d(tag, "onNotificationPosted")
         Log.d(tag, "Notification posted from: $packageName")
         Log.d(tag, "Resolved contact: $contact")
 

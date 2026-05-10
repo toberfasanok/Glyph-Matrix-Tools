@@ -165,6 +165,8 @@ class GlyphMatrixController(
     fun clear(
         onCleared: () -> Unit = {}
     ) {
+        Log.d(tag, "clear")
+
         mainHandler.post {
             val speed = preferencesService
                 .getLong(Constants.PREFERENCES_CIRCLE_ANIMATION_SPEED, 50L)
@@ -180,6 +182,8 @@ class GlyphMatrixController(
     fun clearFast(
         onCleared: () -> Unit = {}
     ) {
+        Log.d(tag, "clearFast")
+
         mainHandler.post {
             clearInternal(
                 speed = FAST_CIRCLE_ANIMATION_SPEED,
@@ -220,6 +224,8 @@ class GlyphMatrixController(
         timeout: Long?,
         onFinished: () -> Unit = {}
     ) {
+        Log.d(tag, "show")
+
         mainHandler.post {
             showInternal(
                 glyph,
@@ -232,6 +238,8 @@ class GlyphMatrixController(
     fun showPersistent(
         glyph: Glyph
     ) {
+        Log.d(tag, "showPersistent")
+
         mainHandler.post {
             showInternal(
                 glyph = glyph,
@@ -293,6 +301,8 @@ class GlyphMatrixController(
         timeout: Long?,
         operation: () -> Unit
     ) {
+        Log.d(tag, "showSimple")
+
         currentRadius = maxRadius
 
         renderBitmap(glyphBitmap)
@@ -314,6 +324,8 @@ class GlyphMatrixController(
         speed: Long,
         operation: () -> Unit
     ) {
+        Log.d(tag, "showAnimated")
+
         val scaledBitmap = glyphBitmap.scale(matrixSize, matrixSize)
 
         val plan = getAnimationPlan(
@@ -377,6 +389,8 @@ class GlyphMatrixController(
         startRadius: Float = maxRadius,
         operation: () -> Unit
     ) {
+        Log.d(tag, "hideAnimated")
+
         clearRunnable = null
 
         val scaledBitmap = glyphBitmap.scale(matrixSize, matrixSize)

@@ -19,6 +19,7 @@ class CallEventState(
     }
 
     private val tag = "Call Event State"
+
     private val context = context.applicationContext
     private val telephonyManager = context.getSystemService(TelephonyManager::class.java)
 
@@ -31,9 +32,20 @@ class CallEventState(
             Log.d(tag, "Call state changed: $state")
 
             when (state) {
-                TelephonyManager.CALL_STATE_RINGING -> listener.onCallRinging()
-                TelephonyManager.CALL_STATE_OFFHOOK -> listener.onCallAnswered()
-                TelephonyManager.CALL_STATE_IDLE -> listener.onCallIdle()
+                TelephonyManager.CALL_STATE_RINGING -> {
+                    Log.d(tag, "onCallRinging")
+                    listener.onCallRinging()
+                }
+
+                TelephonyManager.CALL_STATE_OFFHOOK -> {
+                    Log.d(tag, "onCallAnswered")
+                    listener.onCallAnswered()
+                }
+
+                TelephonyManager.CALL_STATE_IDLE -> {
+                    Log.d(tag, "onCallIdle")
+                    listener.onCallIdle()
+                }
             }
         }
     }

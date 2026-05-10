@@ -157,12 +157,10 @@ class EventService : Service() {
             context = applicationContext,
             listener = object : ScreenWakeEvent.Listener {
                 override fun onScreenOn() {
-                    Log.d(tag, "onScreenOn")
                     onScreenOnEvent()
                 }
 
                 override fun onScreenOff() {
-                    Log.d(tag, "onScreenOff")
                     onScreenOffEvent()
                 }
             }
@@ -182,17 +180,15 @@ class EventService : Service() {
             context = applicationContext,
             listener = object : CallEventState.Listener {
                 override fun onCallRinging() {
-                    Log.d(tag, "onCallRinging")
+                    onCallRingingEvent()
                 }
 
                 override fun onCallAnswered() {
-                    Log.d(tag, "onCallAnswered")
                     onCallAnsweredEvent()
                 }
 
                 override fun onCallIdle() {
-                    Log.d(tag, "onCallIdle")
-                    onCallEndedEvent()
+                    onCallIdleEvent()
                 }
             }
         )
@@ -383,8 +379,6 @@ class EventService : Service() {
                 return@Runnable
             }
 
-            Log.d(tag, "Showing delayed notification glyph")
-
             showGlyphWithPriority(
                 source = GlyphSource.Notification,
                 glyph = glyph,
@@ -435,7 +429,7 @@ class EventService : Service() {
         serviceScope.launch {
             val contact = callContactService.resolve(number)
 
-            Log.d(tag, "Resolved call contact: $contact")
+            Log.d(tag, "Resolved contact: $contact")
 
             activeCall = ActiveCall(
                 number = number,
@@ -462,6 +456,8 @@ class EventService : Service() {
         }
     }
 
+    private fun onCallRingingEvent() {}
+
     private fun onCallAnsweredEvent() {
         val call = activeCall ?: return
 
@@ -470,13 +466,13 @@ class EventService : Service() {
         )
     }
 
-    private fun onCallEndedEvent() {
+    private fun onCallIdleEvent() {
         val call = activeCall ?: return
 
         if (call.answered) {
-            Log.d(tag, "Call ended after answer")
+            Log.d(tag, "Call ended after an answer")
         } else {
-            Log.d(tag, "Call ended before answer")
+            Log.d(tag, "Call ended before an answer")
         }
 
         activeCall = null
@@ -515,6 +511,8 @@ class EventService : Service() {
             return
         }
 
+        Log.d(tag, "Clearing glyph fast: ${activeGlyphDisplay?.glyphId} (${activeGlyphDisplay?.source})")
+
         activeGlyphDisplay = null
 
         glyphMatrixController.clearFast {
@@ -537,9 +535,13 @@ class EventService : Service() {
         )
 
         if (timeout == null) {
+            Log.d(tag, "Displaying persistent glyph: ${glyph.id} (${source})")
+
             glyphMatrixController.showPersistent(glyph)
             return
         }
+
+        Log.d(tag, "Displaying glyph: ${glyph.id} (${source}) for ${timeout}s")
 
         glyphMatrixController.show(
             glyph = glyph,
@@ -565,10 +567,14 @@ class EventService : Service() {
             return
         }
 
+        if (current == null) return
+
+        Log.d(tag, "Clearing glyph: ${current.glyphId} (${current.source})")
+
         glyphMatrixController.clear {
             if (
-                activeGlyphDisplay?.source == current?.source &&
-                activeGlyphDisplay?.glyphId == current?.glyphId
+                activeGlyphDisplay?.source == current.source &&
+                activeGlyphDisplay?.glyphId == current.glyphId
             ) {
                 activeGlyphDisplay = null
             }

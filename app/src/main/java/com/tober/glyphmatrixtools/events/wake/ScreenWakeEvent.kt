@@ -27,12 +27,12 @@ class ScreenWakeEvent(
         ) {
             when (intent.action) {
                 Intent.ACTION_SCREEN_ON -> {
-                    Log.d(tag, "ACTION_SCREEN_ON")
+                    Log.d(tag, "onScreenOn")
                     listener.onScreenOn()
                 }
 
                 Intent.ACTION_SCREEN_OFF -> {
-                    Log.d(tag, "ACTION_SCREEN_OFF")
+                    Log.d(tag, "onScreenOff")
                     listener.onScreenOff()
                 }
             }
