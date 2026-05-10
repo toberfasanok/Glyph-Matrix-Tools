@@ -46,6 +46,20 @@ class EventService : Service() {
         private const val CHANNEL_NAME = "Event Service"
         private const val NOTIFICATION_ID = 1
 
+        fun dispatchGlyphCanvasEvent(
+            context: Context,
+            image: String
+        ) {
+            val appContext = context.applicationContext
+
+            val intent = Intent(appContext, EventService::class.java).apply {
+                action = Constants.PREFERENCES_GLYPH_CANVAS_ACTION_EVENT
+                putExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH, image)
+            }
+
+            ContextCompat.startForegroundService(appContext, intent)
+        }
+
         fun dispatchNotificationEvent(
             context: Context,
             packageName: String,
@@ -124,6 +138,7 @@ class EventService : Service() {
      * Call ended clears CALL glyph.
      */
     private enum class GlyphSource {
+        Canvas,
         ScreenWake,
         Notification,
         Call
@@ -255,6 +270,11 @@ class EventService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
         )
 
+        // Canvas
+        if (intent?.action == Constants.PREFERENCES_GLYPH_CANVAS_ACTION_EVENT) {
+            onGlyphCanvasEvent(intent)
+        }
+
         // Notification
         if (intent?.action == Constants.PREFERENCES_NOTIFICATION_ACTION_EVENT) {
             onNotificationEvent(intent)
@@ -278,6 +298,28 @@ class EventService : Service() {
         cancelPendingNotificationEvent()
 
         clearGlyph()
+    }
+
+    // Canvas
+    private fun onGlyphCanvasEvent(
+        intent: Intent
+    ) {
+        val image = intent.getStringExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH)
+
+        if (image.isNullOrBlank()) {
+            Log.d(tag, "No Glyph Canvas image")
+            return
+        }
+
+        showGlyphWithPriority(
+            source = GlyphSource.Canvas,
+            glyph = Glyph(
+                order = 0,
+                image = image,
+                imageAnimate = false
+            ),
+            10_000L
+        )
     }
 
     // Screen Wake
@@ -488,7 +530,10 @@ class EventService : Service() {
     ): Boolean {
         val current = activeGlyphDisplay ?: return true
 
-        return !(current.source == GlyphSource.Call && source != GlyphSource.Call)
+        return !(
+            (current.source == GlyphSource.Canvas && source != GlyphSource.Canvas) ||
+            (current.source == GlyphSource.Call && source != GlyphSource.Call)
+        )
     }
 
     private fun showGlyphWithPriority(

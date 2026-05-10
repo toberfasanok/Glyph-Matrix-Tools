@@ -491,16 +491,32 @@ class GlyphMatrixController(
                     continue
                 }
 
-                val brightness = (255 * coverage)
+                val sourceRed = Color.red(sourcePixel)
+                val sourceGreen = Color.green(sourcePixel)
+                val sourceBlue = Color.blue(sourcePixel)
+
+                val outputRed = (sourceRed * coverage)
                     .roundToInt()
                     .coerceIn(0, 255)
 
-                maskedBitmap[x, y] = Color.argb(
-                    255,
-                    brightness,
-                    brightness,
-                    brightness
-                )
+                val outputGreen = (sourceGreen * coverage)
+                    .roundToInt()
+                    .coerceIn(0, 255)
+
+                val outputBlue = (sourceBlue * coverage)
+                    .roundToInt()
+                    .coerceIn(0, 255)
+
+                if (outputRed <= 0 && outputGreen <= 0 && outputBlue <= 0) {
+                    maskedBitmap[x, y] = 0
+                } else {
+                    maskedBitmap[x, y] = Color.argb(
+                        255,
+                        outputRed,
+                        outputGreen,
+                        outputBlue
+                    )
+                }
             }
         }
 

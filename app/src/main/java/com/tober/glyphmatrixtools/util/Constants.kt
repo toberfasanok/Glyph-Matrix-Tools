@@ -3,9 +3,9 @@ package com.tober.glyphmatrixtools.util
 object Constants {
     const val PREFERENCES_NAME = "preferences"
 
-    const val PREFERENCES_SCREEN_WAKE_GLYPH_TIMEOUT = "screen_wake_glyph_timeout"
-    const val PREFERENCES_NOTIFICATION_GLYPH_TIMEOUT = "notification_glyph_timeout"
-    const val PREFERENCES_CIRCLE_ANIMATION_SPEED = "circle_animation_speed"
+    const val PREFERENCES_GLYPH_CANVAS_DRAFT = "glyph_canvas_draft"
+    const val PREFERENCES_GLYPH_CANVAS_ACTION_EVENT = "com.tober.glyphmatrixtools.action.GLYPH_CANVAS_EVENT"
+    const val PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH = "glyph_canvas_glyph"
 
     const val PREFERENCES_SCREEN_WAKE_GLYPHS_ACTIVE = "screen_wake_glyphs_active"
     const val PREFERENCES_SCREEN_WAKE_GLYPHS = "screen_wake_glyphs"
@@ -26,4 +26,8 @@ object Constants {
     const val PREFERENCES_CALL_IGNORED_CONTACTS = "call_ignored_contacts"
     const val PREFERENCES_CALL_ACTION_EVENT = "com.tober.glyphmatrixtools.action.CALL_EVENT"
     const val PREFERENCES_CALL_EXTRA_NUMBER = "call_number"
+
+    const val PREFERENCES_SCREEN_WAKE_GLYPH_TIMEOUT = "screen_wake_glyph_timeout"
+    const val PREFERENCES_NOTIFICATION_GLYPH_TIMEOUT = "notification_glyph_timeout"
+    const val PREFERENCES_CIRCLE_ANIMATION_SPEED = "circle_animation_speed"
 }
