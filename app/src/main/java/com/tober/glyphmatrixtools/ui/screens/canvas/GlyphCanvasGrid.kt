@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 
+import com.tober.glyphmatrixtools.ui.glyph.visibleGlyphImageBrightness
+
 @Composable
 fun GlyphCanvasGrid(
     state: GlyphCanvasState,
@@ -125,7 +127,7 @@ fun GlyphCanvasGrid(
                         style = Stroke(width = strokeWidth)
                     )
                 } else {
-                    val visualBrightness = 0.18f + rawBrightness * 0.82f
+                    val visualBrightness = visibleGlyphImageBrightness(rawBrightness)
 
                     val fillColor = androidx.compose.ui.graphics.Color(
                         red = onColor.red * visualBrightness,

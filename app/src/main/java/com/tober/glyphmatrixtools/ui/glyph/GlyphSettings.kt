@@ -32,6 +32,7 @@ fun GlyphSettings(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         title = {
             Text(text = "Settings")
         },

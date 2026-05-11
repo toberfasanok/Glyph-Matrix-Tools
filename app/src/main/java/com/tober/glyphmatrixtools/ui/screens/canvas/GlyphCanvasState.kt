@@ -67,6 +67,10 @@ class GlyphCanvasState(
     fun paintCell(
         index: Int
     ): Boolean {
+        if (paintMode == GlyphCanvasPaintMode.Paint && brushBrightness <= 0) {
+            return false
+        }
+
         val brightness = when (paintMode) {
             GlyphCanvasPaintMode.Paint -> brushBrightness
             GlyphCanvasPaintMode.Erase -> 0

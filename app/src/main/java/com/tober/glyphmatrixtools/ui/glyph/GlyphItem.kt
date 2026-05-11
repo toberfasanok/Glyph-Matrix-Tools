@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -102,9 +104,8 @@ fun GlyphItem(
     val bitmap = remember(image, imageSizePx) {
         image
             ?.takeIf { it.isNotBlank() }
-            ?.let {
-                loadGlyphImageBitmap(it, imageSizePx)
-            }
+            ?.let { loadGlyphImageBitmap(it, imageSizePx) }
+            ?.toVisibleGlyphImageBrightness()
     }
 
     // App
@@ -151,6 +152,9 @@ fun GlyphItem(
     // UI
     Card(
         shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF171717)
+        ),
         modifier = modifier.fillMaxWidth()
     ) {
         Row(
@@ -181,7 +185,7 @@ fun GlyphItem(
                         modifier = Modifier
                             .size(imageSize)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .background(Color(0xFF222222))
                             .clickable {
                                 onClickGlyphImage()
                             }

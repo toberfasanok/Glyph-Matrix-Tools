@@ -32,6 +32,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -77,6 +78,7 @@ fun GlyphCanvasScreen(
             onDismissRequest = {
                 showClearConfirmation = false
             },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = {
                 Text(text = "Clear Canvas?")
             },
@@ -107,6 +109,7 @@ fun GlyphCanvasScreen(
             onDismissRequest = {
                 showSettings = false
             },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             title = {
                 Text(text = "Brightness")
             },
@@ -120,7 +123,7 @@ fun GlyphCanvasScreen(
                             state.brushBrightness = value.roundToInt().coerceIn(0, 100)
                             state.persist()
                         },
-                        valueRange = 0f..100f
+                        valueRange = 1f..100f
                     )
                 }
             },

@@ -138,14 +138,14 @@ class GlyphMatrixController(
     fun start() {
         if (manager != null) return
 
-        Log.d(tag, "Start")
+        Log.d(tag, "Started")
 
         manager = GlyphMatrixManager.getInstance(context.applicationContext)
         manager?.init(managerCallback)
     }
 
     fun stop() {
-        Log.d(tag, "Stop")
+        Log.d(tag, "Stopped")
 
         cancelScheduledDisplayWork()
         finishDisplay()

@@ -65,6 +65,7 @@ fun GlyphAppPicker(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         title = {
             Text(text = "Choose an app")
         },

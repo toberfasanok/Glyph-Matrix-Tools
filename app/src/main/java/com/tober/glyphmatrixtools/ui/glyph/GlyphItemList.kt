@@ -476,7 +476,6 @@ fun LazyListScope.glyphItemList(
                         Modifier.graphicsLayer {
                             scaleX = scale
                             scaleY = scale
-                            shadowElevation = 16f
                         }
                     } else {
                         Modifier
