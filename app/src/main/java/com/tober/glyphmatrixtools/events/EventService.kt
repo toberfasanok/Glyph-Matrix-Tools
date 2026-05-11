@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasConstants
 import com.tober.glyphmatrixtools.events.call.CallContactService
 import com.tober.glyphmatrixtools.events.call.CallGlyphsService
 import com.tober.glyphmatrixtools.events.call.CallEventState
@@ -48,13 +49,15 @@ class EventService : Service() {
 
         fun dispatchGlyphCanvasEvent(
             context: Context,
-            image: String
+            image: String? = null,
+            animation: String? = null
         ) {
             val appContext = context.applicationContext
 
             val intent = Intent(appContext, EventService::class.java).apply {
                 action = Constants.PREFERENCES_GLYPH_CANVAS_ACTION_EVENT
-                putExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH, image)
+                putExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_IMAGE, image)
+                putExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_ANIMATION, animation)
             }
 
             ContextCompat.startForegroundService(appContext, intent)
@@ -304,21 +307,29 @@ class EventService : Service() {
     private fun onGlyphCanvasEvent(
         intent: Intent
     ) {
-        val image = intent.getStringExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH)
+        val image = intent
+            .getStringExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_IMAGE)
+            ?.takeIf { it.isNotBlank() }
 
-        if (image.isNullOrBlank()) {
-            Log.d(tag, "No Glyph Canvas image")
+        val animation = intent
+            .getStringExtra(Constants.PREFERENCES_GLYPH_CANVAS_EXTRA_ANIMATION)
+            ?.takeIf { it.isNotBlank() }
+
+        if (image == null && animation == null) {
+            Log.d(tag, "No Canvas Glyph resolved")
             return
         }
 
-        showGlyphWithPriority(
-            source = GlyphSource.Canvas,
-            glyph = Glyph(
-                order = 0,
-                image = image,
-                imageAnimate = false
-            ),
-            10_000L
+        val glyph = Glyph(
+            order = 0,
+            image = image,
+            animation = animation,
+            circleAnimate = false
+        )
+
+        glyphMatrixController.show(
+            glyph = glyph,
+            timeout = GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT
         )
     }
 

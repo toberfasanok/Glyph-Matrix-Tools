@@ -30,7 +30,9 @@ import kotlin.math.abs
 
 import com.tober.glyphmatrixtools.apps.App
 import com.tober.glyphmatrixtools.glyph.Glyph
-import com.tober.glyphmatrixtools.glyph.GlyphImageStorage
+import com.tober.glyphmatrixtools.glyph.GlyphAsset
+import com.tober.glyphmatrixtools.glyph.GlyphAssetStorage
+import com.tober.glyphmatrixtools.glyph.GlyphAssetType
 import com.tober.glyphmatrixtools.glyph.GlyphStorage
 import com.tober.glyphmatrixtools.util.ToastService
 
@@ -56,7 +58,7 @@ class GlyphItemListState(
 
     val useContact: Boolean
 ) {
-    var newGlyphImage by mutableStateOf<String?>(null)
+    var newGlyphAsset by mutableStateOf<GlyphAsset?>(null)
     var newGlyphApp by mutableStateOf<App?>(null)
     var newGlyphContact by mutableStateOf<String?>(null)
 
@@ -82,15 +84,13 @@ class GlyphItemListState(
     }
 
     fun validateAndSaveGlyph() {
-        val image = newGlyphImage
+        val asset = newGlyphAsset
         val app = newGlyphApp
         val contact = newGlyphContact
 
-        if (useImage) {
-            if (image.isNullOrBlank()) {
-                toastService.show("Choose a glyph")
-                return
-            }
+        if (useImage && asset == null) {
+            toastService.show("Choose a glyph")
+            return
         }
 
         if (useApp) {
@@ -126,15 +126,15 @@ class GlyphItemListState(
         }
 
         if (useImage) {
-            GlyphImageStorage
-                .saveGlyphImage(
+            GlyphAssetStorage
+                .saveGlyphAsset(
                     context = context,
-                    path = image!!,
+                    asset = asset!!,
                     prefix = imagePrefix!!
                 )
-                .onSuccess { savedImage ->
-                    saveGlyph(savedImage)
-                    GlyphImageStorage.deleteGlyphImage(image)
+                .onSuccess { savedAsset ->
+                    saveGlyph(savedAsset)
+                    GlyphAssetStorage.deleteGlyphAsset(asset)
                 }
                 .onFailure { error ->
                     toastService.show(error.message ?: "Failed to save glyph")
@@ -145,7 +145,7 @@ class GlyphItemListState(
     }
 
     private fun saveGlyph(
-        savedImage: String?
+        savedAsset: GlyphAsset?
     ) {
         val app = newGlyphApp
         val contact = newGlyphContact
@@ -154,8 +154,13 @@ class GlyphItemListState(
             Glyph(
                 order = glyphs.size,
 
-                image = savedImage,
-                imageAnimate = true,
+                image = savedAsset
+                    ?.takeIf { it.type == GlyphAssetType.Image }
+                    ?.path,
+                animation = savedAsset
+                    ?.takeIf { it.type == GlyphAssetType.Animation }
+                    ?.path,
+                circleAnimate = true,
 
                 appLabel = app?.label,
                 appPackageName = app?.packageName,
@@ -166,26 +171,26 @@ class GlyphItemListState(
 
         persistGlyphs()
 
-        newGlyphImage = null
+        newGlyphAsset = null
         newGlyphApp = null
         newGlyphContact = null
 
         toastService.show("Entry saved")
     }
 
-    fun updateGlyphImage(
+    fun updateGlyphAsset(
         glyphId: String,
-        temporaryImagePath: String
+        temporaryAsset: GlyphAsset
     ) {
         if (!useImage || imagePrefix.isNullOrBlank()) return
 
-        GlyphImageStorage
-            .saveGlyphImage(
+        GlyphAssetStorage
+            .saveGlyphAsset(
                 context = context,
-                path = temporaryImagePath,
+                asset = temporaryAsset,
                 prefix = imagePrefix
             )
-            .onSuccess { savedImage ->
+            .onSuccess { savedAsset ->
                 val index = glyphs.indexOfFirst {
                     it.id == glyphId
                 }
@@ -193,12 +198,24 @@ class GlyphItemListState(
                 if (index != -1) {
                     val old = glyphs[index]
 
-                    glyphs[index] = old.copy(
-                        image = savedImage
-                    )
+                    glyphs[index] = when (savedAsset.type) {
+                        GlyphAssetType.Image -> {
+                            old.copy(
+                                image = savedAsset.path,
+                                animation = null
+                            )
+                        }
 
-                    GlyphImageStorage.deleteGlyphImage(old.image)
-                    GlyphImageStorage.deleteGlyphImage(temporaryImagePath)
+                        GlyphAssetType.Animation -> {
+                            old.copy(
+                                image = null,
+                                animation = savedAsset.path
+                            )
+                        }
+                    }
+
+                    GlyphAssetStorage.deleteGlyphAsset(old)
+                    GlyphAssetStorage.deleteGlyphAsset(temporaryAsset)
 
                     persistGlyphs()
 
@@ -286,7 +303,7 @@ class GlyphItemListState(
             it.id == deleted.id
         }
 
-        GlyphImageStorage.deleteGlyphImage(deleted.image)
+        GlyphAssetStorage.deleteGlyphAsset(deleted)
         persistGlyphs()
 
         toastService.show("Entry deleted")
@@ -375,12 +392,18 @@ fun LazyListScope.glyphItemList(
             action = GlyphItemAction.Save,
 
             useImage = state.useImage,
-            image = state.newGlyphImage,
+            image = state.newGlyphAsset
+                ?.takeIf { it.type == GlyphAssetType.Image }
+                ?.path,
+            animation = state.newGlyphAsset
+                ?.takeIf { it.type == GlyphAssetType.Animation }
+                ?.path,
             imageSize = state.imageSize,
-            onGlyphImagePicked = { temporaryImagePath ->
-                state.newGlyphImage = temporaryImagePath
+            onGlyphAssetPicked = { temporaryAsset ->
+                GlyphAssetStorage.deleteGlyphAsset(state.newGlyphAsset)
+                state.newGlyphAsset = temporaryAsset
             },
-            onGlyphImagePickError = { error ->
+            onGlyphAssetPickError = { error ->
                 state.toastService.show(error)
             },
 
@@ -432,14 +455,15 @@ fun LazyListScope.glyphItemList(
 
             useImage = state.useImage,
             image = item.image,
+            animation = item.animation,
             imageSize = state.imageSize,
-            onGlyphImagePicked = { temporaryImagePath ->
-                state.updateGlyphImage(
+            onGlyphAssetPicked = { temporaryAsset ->
+                state.updateGlyphAsset(
                     glyphId = item.id,
-                    temporaryImagePath = temporaryImagePath
+                    temporaryAsset = temporaryAsset
                 )
             },
-            onGlyphImagePickError = { error ->
+            onGlyphAssetPickError = { error ->
                 state.toastService.show(error)
             },
 

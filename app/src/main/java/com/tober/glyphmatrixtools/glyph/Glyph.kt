@@ -7,7 +7,8 @@ data class Glyph(
     val order: Int,
 
     val image: String? = null,
-    val imageAnimate: Boolean = true,
+    val animation: String? = null,
+    val circleAnimate: Boolean = true,
 
     val appLabel: String? = null,
     val appPackageName: String? = null,

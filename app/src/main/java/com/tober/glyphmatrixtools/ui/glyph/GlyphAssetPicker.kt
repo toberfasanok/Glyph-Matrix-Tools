@@ -8,17 +8,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
 
-import com.tober.glyphmatrixtools.glyph.GlyphImageStorage
+import com.tober.glyphmatrixtools.glyph.GlyphAsset
+import com.tober.glyphmatrixtools.glyph.GlyphAssetStorage
 
 @Composable
-fun glyphImagePicker(
-    onGlyphImagePicked: (String) -> Unit,
+fun glyphAssetPicker(
+    onGlyphAssetPicked: (GlyphAsset) -> Unit,
     onError: (String) -> Unit
 ): () -> Unit {
     val context = LocalContext.current
 
     val currentOnError = rememberUpdatedState(onError)
-    val currentOnGlyphImagePicked = rememberUpdatedState(onGlyphImagePicked)
+    val currentOnGlyphAssetPicked = rememberUpdatedState(onGlyphAssetPicked)
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -34,19 +35,25 @@ fun glyphImagePicker(
             )
         }
 
-        GlyphImageStorage
-            .copyGlyphImageToTemporaryFile(context, uri)
-            .onSuccess { path ->
-                currentOnGlyphImagePicked.value(path)
+        GlyphAssetStorage
+            .copyGlyphAssetToTemporaryFile(context, uri)
+            .onSuccess { asset ->
+                currentOnGlyphAssetPicked.value(asset)
             }
             .onFailure { error ->
-                currentOnError.value(error.message ?: "Failed to load image")
+                currentOnError.value(error.message ?: "Failed to load glyph asset")
             }
     }
 
     return remember(launcher) {
         {
-            launcher.launch(arrayOf("image/*"))
+            launcher.launch(
+                arrayOf(
+                    "image/*",
+                    "application/json",
+                    "*/*"
+                )
+            )
         }
     }
 }

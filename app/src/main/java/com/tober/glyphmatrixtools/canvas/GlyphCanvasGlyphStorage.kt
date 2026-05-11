@@ -8,7 +8,7 @@ import java.io.FileOutputStream
 object GlyphCanvasGlyphStorage {
     fun writeGlyphImage(
         context: Context,
-        bitmap: Bitmap
+        image: Bitmap
     ): String {
         val directory = File(
             context.cacheDir,
@@ -32,9 +32,23 @@ object GlyphCanvasGlyphStorage {
         )
 
         FileOutputStream(file).use { output ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            image.compress(Bitmap.CompressFormat.PNG, 100, output)
             output.flush()
         }
+
+        return file.absolutePath
+    }
+
+    fun writeGlyphAnimation(
+        context: Context,
+        animation: GlyphCanvasAnimationFile
+    ): String {
+        val file = File(
+            context.cacheDir,
+            "glyph_canvas_animation_${System.currentTimeMillis()}.gma"
+        )
+
+        file.writeText(animation.toJson())
 
         return file.absolutePath
     }

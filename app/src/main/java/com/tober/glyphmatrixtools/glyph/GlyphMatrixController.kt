@@ -14,6 +14,7 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.get
 import androidx.core.graphics.scale
 import androidx.core.graphics.set
+import java.io.File
 import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -25,6 +26,8 @@ import com.nothing.ketchum.GlyphMatrixFrame
 import com.nothing.ketchum.GlyphMatrixManager
 import com.nothing.ketchum.GlyphMatrixObject
 
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasEditor
 import com.tober.glyphmatrixtools.util.Constants
 import com.tober.glyphmatrixtools.util.PreferencesService
 
@@ -51,7 +54,19 @@ class GlyphMatrixController(
     )
     private var pendingRequest: GlyphRequest? = null
     private var currentGlyph: Glyph? = null
-    private var currentBitmap: Bitmap? = null
+    private data class GlyphPresentation(
+        val frames: List<Bitmap>,
+        val frameTime: Long
+    ) {
+        val isAnimation: Boolean
+            get() = frames.size > 1
+    }
+
+    private var currentPresentation: GlyphPresentation? = null
+    private var currentFrameIndex = 0
+    private var playbackRunnable: Runnable? = null
+
+    private val canvasEditor = GlyphCanvasEditor()
 
     private val matrixSize = 25
     private val matrixCenterX = (matrixSize - 1) / 2.0
@@ -199,13 +214,12 @@ class GlyphMatrixController(
         pendingRequest = null
 
         val glyph = currentGlyph
-        val bitmap = currentBitmap
+        val presentation = currentPresentation
 
-        cancelScheduledDisplayWork()
+        cancelTimeoutAndCircleWork()
 
-        if (glyph?.imageAnimate == true && bitmap != null && initialized) {
-            hideAnimated(
-                glyphBitmap = bitmap,
+        if (glyph?.circleAnimate == true && presentation != null && initialized) {
+            hideCircleReveal(
                 speed = speed,
                 startRadius = currentRadius,
                 operation = {
@@ -254,7 +268,7 @@ class GlyphMatrixController(
         timeout: Long?,
         onFinished: () -> Unit
     ) {
-        if (glyph.image.isNullOrBlank()) return
+        val presentation = loadPresentation(glyph) ?: return
 
         if (!initialized) {
             pendingRequest = GlyphRequest(
@@ -265,18 +279,26 @@ class GlyphMatrixController(
             return
         }
 
-        val bitmap = BitmapFactory.decodeFile(glyph.image) ?: return
-
         prepareForNewDisplay()
         acquireWakeLock()
 
         currentGlyph = glyph
-        currentBitmap = bitmap
-        currentRadius = minRadius
+        currentPresentation = presentation
+        currentFrameIndex = 0
+        currentRadius = if (glyph.circleAnimate) {
+            minRadius
+        } else {
+            maxRadius
+        }
 
-        if (glyph.imageAnimate) {
-            showAnimated(
-                glyphBitmap = bitmap,
+        renderCurrentPresentationFrame()
+
+        if (presentation.isAnimation) {
+            startPresentationPlayback()
+        }
+
+        if (glyph.circleAnimate) {
+            showCircleReveal(
                 timeout = timeout,
                 speed = getCircleAnimationSpeed(),
                 operation = {
@@ -285,8 +307,7 @@ class GlyphMatrixController(
                 }
             )
         } else {
-            showSimple(
-                glyphBitmap = bitmap,
+            showWithTimeout(
                 timeout = timeout,
                 operation = {
                     finishDisplay()
@@ -296,17 +317,10 @@ class GlyphMatrixController(
         }
     }
 
-    private fun showSimple(
-        glyphBitmap: Bitmap,
+    private fun showWithTimeout(
         timeout: Long?,
         operation: () -> Unit
     ) {
-        Log.d(tag, "showSimple")
-
-        currentRadius = maxRadius
-
-        renderBitmap(glyphBitmap)
-
         if (timeout == null) return
 
         val runnable = Runnable {
@@ -318,15 +332,12 @@ class GlyphMatrixController(
         mainHandler.postDelayed(runnable, timeout)
     }
 
-    private fun showAnimated(
-        glyphBitmap: Bitmap,
+    private fun showCircleReveal(
         timeout: Long?,
         speed: Long,
         operation: () -> Unit
     ) {
-        Log.d(tag, "showAnimated")
-
-        val scaledBitmap = glyphBitmap.scale(matrixSize, matrixSize)
+        Log.d(tag, "showCircleReveal")
 
         val plan = getAnimationPlan(
             speed = speed,
@@ -347,28 +358,23 @@ class GlyphMatrixController(
                     )
 
                     currentRadius = radius
-
-                    val maskedBitmap = getMaskedBitmap(
-                        radius = radius,
-                        bitmap = scaledBitmap
-                    )
-
-                    renderBitmap(maskedBitmap)
+                    renderCurrentPresentationFrame()
 
                     frameIndex++
 
                     mainHandler.postDelayed(this, plan.frameDelay)
                 } else {
                     currentRadius = maxRadius
+                    renderCurrentPresentationFrame()
 
                     animationRunnable = null
 
                     if (timeout == null) return
 
                     val clear = Runnable {
-                        hideAnimated(
-                            glyphBitmap = glyphBitmap,
+                        hideCircleReveal(
                             speed = speed,
+                            startRadius = maxRadius,
                             operation = operation
                         )
                     }
@@ -383,17 +389,14 @@ class GlyphMatrixController(
         mainHandler.post(runnable)
     }
 
-    private fun hideAnimated(
-        glyphBitmap: Bitmap,
+    private fun hideCircleReveal(
         speed: Long,
         startRadius: Float = maxRadius,
         operation: () -> Unit
     ) {
-        Log.d(tag, "hideAnimated")
+        Log.d(tag, "hideCircleReveal")
 
         clearRunnable = null
-
-        val scaledBitmap = glyphBitmap.scale(matrixSize, matrixSize)
 
         val safeStartRadius = startRadius.coerceIn(minRadius, maxRadius)
 
@@ -416,13 +419,7 @@ class GlyphMatrixController(
                     )
 
                     currentRadius = radius
-
-                    val maskedBitmap = getMaskedBitmap(
-                        radius = radius,
-                        bitmap = scaledBitmap
-                    )
-
-                    renderBitmap(maskedBitmap)
+                    renderCurrentPresentationFrame()
 
                     frameIndex++
 
@@ -580,12 +577,18 @@ class GlyphMatrixController(
     }
 
     private fun finishDisplay() {
+        stopPresentationPlayback()
         closeGlyphMatrixSafely()
         resetActiveGlyphState()
         releaseWakeLock()
     }
 
     private fun cancelScheduledDisplayWork() {
+        cancelTimeoutAndCircleWork()
+        stopPresentationPlayback()
+    }
+
+    private fun cancelTimeoutAndCircleWork() {
         clearRunnable?.let {
             mainHandler.removeCallbacks(it)
         }
@@ -608,8 +611,112 @@ class GlyphMatrixController(
 
     private fun resetActiveGlyphState() {
         currentGlyph = null
-        currentBitmap = null
+        currentPresentation = null
+        currentFrameIndex = 0
         currentRadius = minRadius
+    }
+
+    private fun loadPresentation(
+        glyph: Glyph
+    ): GlyphPresentation? {
+        val hasImage = !glyph.image.isNullOrBlank()
+        val hasAnimation = !glyph.animation.isNullOrBlank()
+
+        if (hasImage == hasAnimation) {
+            Log.e(tag, "Glyph must have exactly one asset")
+            return null
+        }
+
+        if (hasImage) {
+            val bitmap = BitmapFactory
+                .decodeFile(glyph.image)
+                ?.scale(matrixSize, matrixSize)
+                ?: return null
+
+            return GlyphPresentation(
+                frames = listOf(bitmap),
+                frameTime = 0L
+            )
+        }
+
+        val raw = runCatching {
+            File(glyph.animation!!).readText()
+        }.getOrNull() ?: return null
+
+        val animationFile = GlyphCanvasAnimationFile.fromJson(raw) ?: return null
+
+        val frames = animationFile.frames
+            .map { frame ->
+                canvasEditor
+                    .toBitmap(frame)
+                    .scale(matrixSize, matrixSize)
+            }
+            .filter {
+                it.width > 0 && it.height > 0
+            }
+
+        if (frames.isEmpty()) return null
+
+        return GlyphPresentation(
+            frames = frames,
+            frameTime = animationFile.frameTime.toLong().coerceAtLeast(1L)
+        )
+    }
+
+    private fun startPresentationPlayback() {
+        stopPresentationPlayback()
+
+        val presentation = currentPresentation ?: return
+
+        if (!presentation.isAnimation) return
+
+        val runnable = object : Runnable {
+            override fun run() {
+                val current = currentPresentation ?: return
+                if (!current.isAnimation) return
+
+                currentFrameIndex = (currentFrameIndex + 1) % current.frames.size
+
+                renderCurrentPresentationFrame()
+
+                mainHandler.postDelayed(
+                    this,
+                    current.frameTime.coerceAtLeast(1L)
+                )
+            }
+        }
+
+        playbackRunnable = runnable
+        mainHandler.postDelayed(
+            runnable,
+            presentation.frameTime.coerceAtLeast(1L)
+        )
+    }
+
+    private fun stopPresentationPlayback() {
+        playbackRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        playbackRunnable = null
+    }
+
+    private fun renderCurrentPresentationFrame() {
+        val presentation = currentPresentation ?: return
+        val frame = presentation.frames.getOrNull(
+            currentFrameIndex.coerceIn(0, presentation.frames.lastIndex)
+        ) ?: return
+
+        val bitmap = if (currentRadius >= maxRadius) {
+            frame
+        } else {
+            getMaskedBitmap(
+                radius = currentRadius,
+                bitmap = frame
+            )
+        }
+
+        renderBitmap(bitmap)
     }
 
     @SuppressLint("WakelockTimeout")

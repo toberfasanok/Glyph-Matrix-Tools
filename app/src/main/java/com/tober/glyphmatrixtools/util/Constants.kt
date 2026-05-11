@@ -5,7 +5,8 @@ object Constants {
 
     const val PREFERENCES_GLYPH_CANVAS_DRAFT = "glyph_canvas_draft"
     const val PREFERENCES_GLYPH_CANVAS_ACTION_EVENT = "com.tober.glyphmatrixtools.action.GLYPH_CANVAS_EVENT"
-    const val PREFERENCES_GLYPH_CANVAS_EXTRA_GLYPH = "glyph_canvas_glyph"
+    const val PREFERENCES_GLYPH_CANVAS_EXTRA_IMAGE = "glyph_canvas_image"
+    const val PREFERENCES_GLYPH_CANVAS_EXTRA_ANIMATION = "glyph_canvas_animation"
 
     const val PREFERENCES_SCREEN_WAKE_GLYPHS_ACTIVE = "screen_wake_glyphs_active"
     const val PREFERENCES_SCREEN_WAKE_GLYPHS = "screen_wake_glyphs"

@@ -2,30 +2,85 @@ package com.tober.glyphmatrixtools.ui.glyph
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import java.io.File
 
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasEditor
+import com.tober.glyphmatrixtools.glyph.GlyphAnimationCache
+import com.tober.glyphmatrixtools.glyph.GlyphAnimationCacheEntry
 import com.tober.glyphmatrixtools.glyph.GlyphImageCache
+import com.tober.glyphmatrixtools.glyph.GlyphImageCacheEntry
 
-fun loadGlyphImageBitmap(
+sealed interface GlyphAssetPreview {
+    data class Image(
+        val image: Bitmap
+    ) : GlyphAssetPreview
+
+    data class Animation(
+        val frames: List<Bitmap>,
+        val frameTime: Int
+    ) : GlyphAssetPreview
+}
+
+fun loadGlyphAsset(
+    image: String?,
+    animation: String?,
+    targetSize: Int
+): GlyphAssetPreview? {
+    return when {
+        !animation.isNullOrBlank() -> {
+            loadGlyphAnimation(
+                path = animation,
+                targetSize = targetSize
+            )?.let {
+                GlyphAssetPreview.Animation(
+                    frames = it.frames,
+                    frameTime = it.frameTime
+                )
+            }
+        }
+
+        !image.isNullOrBlank() -> {
+            loadGlyphImage(
+                path = image,
+                targetSize = targetSize
+            )?.let {
+                GlyphAssetPreview.Image(
+                    image = it
+                )
+            }
+        }
+
+        else -> null
+    }
+}
+
+private fun loadGlyphImage(
     path: String,
     targetSize: Int
 ): Bitmap? {
     val cacheKey = "$path:$targetSize"
 
     GlyphImageCache.get(cacheKey)?.let {
-        return it
+        return it.image
     }
 
-    val bitmap = decodeGlyphImageBitmap(
+    val image = decodeGlyphImage(
         path = path,
         targetSize = targetSize
-    ) ?: return null
+    )?.toVisibleGlyphImageBrightness() ?: return null
 
-    GlyphImageCache.put(cacheKey, bitmap)
+    GlyphImageCache.put(
+        key = cacheKey,
+        value = GlyphImageCacheEntry(
+            image = image
+        )
+    )
 
-    return bitmap
+    return image
 }
 
-private fun decodeGlyphImageBitmap(
+private fun decodeGlyphImage(
     path: String,
     targetSize: Int
 ): Bitmap? {
@@ -51,4 +106,53 @@ private fun decodeGlyphImageBitmap(
     }
 
     return BitmapFactory.decodeFile(path, options)
+}
+
+data class GlyphAnimation(
+    val frames: List<Bitmap>,
+    val frameTime: Int
+)
+
+private fun loadGlyphAnimation(
+    path: String,
+    targetSize: Int
+): GlyphAnimation? {
+    val cacheKey = "$path:$targetSize"
+
+    GlyphAnimationCache.get(cacheKey)?.let { cached ->
+        return GlyphAnimation(
+            frames = cached.frames,
+            frameTime = cached.frameTime
+        )
+    }
+
+    val raw = runCatching {
+        File(path).readText()
+    }.getOrNull() ?: return null
+
+    val animation = GlyphCanvasAnimationFile.fromJson(raw) ?: return null
+    val editor = GlyphCanvasEditor()
+
+    val frames = animation.frames.map { frame ->
+        editor
+            .toBitmap(frame)
+            .toVisibleGlyphImageBrightness()
+    }
+
+    if (frames.isEmpty()) return null
+
+    val preview = GlyphAnimation(
+        frames = frames,
+        frameTime = animation.frameTime.coerceAtLeast(1)
+    )
+
+    GlyphAnimationCache.put(
+        key = cacheKey,
+        value = GlyphAnimationCacheEntry(
+            frames = preview.frames,
+            frameTime = preview.frameTime
+        )
+    )
+
+    return preview
 }

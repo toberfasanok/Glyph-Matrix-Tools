@@ -4,19 +4,22 @@ import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasConstants
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasDraft
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasDraftStorage
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasEditor
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasMask
-import com.tober.glyphmatrixtools.canvas.GlyphCanvasDraftStorage
+import com.tober.glyphmatrixtools.canvas.GlyphCanvasSnapshot
 
 enum class GlyphCanvasPaintMode {
     Paint,
@@ -28,22 +31,53 @@ class GlyphCanvasState(
     private val storage: GlyphCanvasDraftStorage,
     val cells: SnapshotStateList<Int>
 ) {
+    private val frames = mutableStateListOf<List<Int>>()
+    private val undoHistory = mutableStateListOf<GlyphCanvasSnapshot>()
+    private val redoHistory = mutableStateListOf<GlyphCanvasSnapshot>()
+
+    private var editStartSnapshot: GlyphCanvasSnapshot? = null
+
     var paintMode by mutableStateOf(GlyphCanvasPaintMode.Paint)
-
     var brushBrightness by mutableIntStateOf(GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS)
+    var currentFrameIndex by mutableIntStateOf(0)
+        private set
+    var animationFrameTime by mutableIntStateOf(GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME)
+    var isPreviewing by mutableStateOf(false)
+        private set
 
-    private val undoHistory = mutableStateListOf<List<Int>>()
-    private val redoHistory = mutableStateListOf<List<Int>>()
+    val frameCount: Int
+        get() = frames.size.coerceAtLeast(1)
 
-    private var editStartSnapshot: List<Int>? = null
+    val currentFrameNumber: Int
+        get() = currentFrameIndex + 1
+
+    val isAnimationMode: Boolean
+        get() = frameCount > 1
+
+    val canUndo: Boolean
+        get() = undoHistory.isNotEmpty()
+
+    val canRedo: Boolean
+        get() = redoHistory.isNotEmpty()
+
+    val hasPreviousFrame: Boolean
+        get() = currentFrameIndex > 0
+
+    val hasNextFrame: Boolean
+        get() = currentFrameIndex < frames.lastIndex
 
     fun loadDraft() {
         val draft = storage.getDraft()
+        val safeFrames = draft.safeFrames(editor.mask)
 
-        cells.clear()
-        cells.addAll(draft.toCells(editor.mask))
+        frames.clear()
+        frames.addAll(safeFrames)
 
-        brushBrightness = draft.brushBrightness.coerceIn(0, 100)
+        currentFrameIndex = draft.currentFrameIndex.coerceIn(0, frames.lastIndex.coerceAtLeast(0))
+        restoreFrame(currentFrameIndex)
+
+        brushBrightness = draft.brushBrightness.coerceIn(1, 100)
+        animationFrameTime = draft.animationFrameTime.coerceAtLeast(1)
 
         undoHistory.clear()
         undoHistory.addAll(draft.undoHistory.takeLast(GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS))
@@ -53,13 +87,19 @@ class GlyphCanvasState(
     }
 
     fun persist() {
+        commitCurrentFrame()
+
         storage.setDraft(
-            GlyphCanvasDraft.fromCells(
-                cells = cells,
+            GlyphCanvasDraft.fromState(
                 matrixSize = editor.matrixSize,
+
+                frames = frames,
+                currentFrameIndex = currentFrameIndex,
+                brushBrightness = brushBrightness,
+                animationFrameTime = animationFrameTime,
+
                 undoHistory = undoHistory,
-                redoHistory = redoHistory,
-                brushBrightness = brushBrightness
+                redoHistory = redoHistory
             )
         )
     }
@@ -84,6 +124,7 @@ class GlyphCanvasState(
     }
 
     fun beginEdit() {
+        if (isPreviewing) return
         editStartSnapshot = snapshot()
     }
 
@@ -91,29 +132,62 @@ class GlyphCanvasState(
         changed: Boolean
     ) {
         val before = editStartSnapshot
-
         editStartSnapshot = null
 
         if (changed && before != null) {
+            commitCurrentFrame()
             pushUndoSnapshot(before)
             persist()
         }
     }
 
-    fun clear() {
+    fun clearCurrentFrame() {
+        if (isPreviewing) return
+
         val before = snapshot()
 
-        editor.clear(cells)
+        editor.clearFrame(cells)
+        commitCurrentFrame()
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun deleteCurrentFrame() {
+        if (isPreviewing || frameCount <= 1) return
+
+        val before = snapshot()
+
+        frames.removeAt(currentFrameIndex)
+
+        currentFrameIndex = currentFrameIndex.coerceAtMost(frames.lastIndex)
+        restoreFrame(currentFrameIndex)
+
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun clearAnimation() {
+        if (isPreviewing) return
+
+        val before = snapshot()
+
+        frames.clear()
+        frames.add(editor.getEmptyFrame())
+
+        currentFrameIndex = 0
+        restoreFrame(0)
 
         pushUndoSnapshot(before)
         persist()
     }
 
     fun reverse() {
+        if (isPreviewing) return
+
         val before = snapshot()
 
         editor.reverse(cells)
-
+        commitCurrentFrame()
         pushUndoSnapshot(before)
         persist()
     }
@@ -122,6 +196,8 @@ class GlyphCanvasState(
         dx: Int,
         dy: Int
     ) {
+        if (isPreviewing) return
+
         val before = snapshot()
 
         editor.move(
@@ -129,6 +205,52 @@ class GlyphCanvasState(
             dx = dx,
             dy = dy
         )
+
+        commitCurrentFrame()
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun goToPreviousFrame(): Boolean {
+        if (isPreviewing) return true
+        if (currentFrameIndex <= 0) return false
+
+        commitCurrentFrame()
+        currentFrameIndex--
+        restoreFrame(currentFrameIndex)
+        persist()
+
+        return true
+    }
+
+    fun goToNextFrame(): Boolean {
+        if (isPreviewing) return true
+        if (currentFrameIndex >= frames.lastIndex) return false
+
+        commitCurrentFrame()
+        currentFrameIndex++
+        restoreFrame(currentFrameIndex)
+        persist()
+
+        return true
+    }
+
+    fun createFrame(
+        direction: Int
+    ) {
+        if (isPreviewing) return
+
+        val before = snapshot()
+        val insertIndex = if (direction < 0) {
+            currentFrameIndex
+        } else {
+            currentFrameIndex + 1
+        }.coerceIn(0, frames.size)
+
+        commitCurrentFrame()
+        frames.add(insertIndex, editor.getEmptyFrame())
+        currentFrameIndex = insertIndex
+        restoreFrame(currentFrameIndex)
 
         pushUndoSnapshot(before)
         persist()
@@ -138,9 +260,21 @@ class GlyphCanvasState(
         return editor.toBitmap(cells)
     }
 
+    fun createAnimationFile(): GlyphCanvasAnimationFile {
+        commitCurrentFrame()
+
+        return GlyphCanvasAnimationFile(
+            matrixSize = editor.matrixSize,
+            frameTime = animationFrameTime,
+            frames = frames.toList()
+        )
+    }
+
     fun loadBitmap(
         bitmap: Bitmap
     ) {
+        if (isPreviewing) return
+
         val before = snapshot()
 
         editor.loadBitmap(
@@ -148,79 +282,225 @@ class GlyphCanvasState(
             bitmap = bitmap
         )
 
+        commitCurrentFrame()
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun loadAnimation(
+        animationFile: GlyphCanvasAnimationFile
+    ) {
+        if (isPreviewing) return
+
+        val before = snapshot()
+        val total = editor.matrixSize * editor.matrixSize
+
+        frames.clear()
+        frames.addAll(
+            animationFile.frames.map { frame ->
+                frame
+                    .take(total)
+                    .let { values ->
+                        if (values.size < total) {
+                            values + List(total - values.size) { 0 }
+                        } else {
+                            values
+                        }
+                    }
+                    .mapIndexed { index, value ->
+                        if (editor.mask[index]) {
+                            value.coerceIn(0, 100)
+                        } else {
+                            0
+                        }
+                    }
+            }.ifEmpty {
+                listOf(editor.getEmptyFrame())
+            }
+        )
+
+        currentFrameIndex = 0
+        animationFrameTime = animationFile.frameTime.coerceAtLeast(1)
+        restoreFrame(0)
+
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun updateAnimationFrameTime(
+        value: Int
+    ) {
+        if (isPreviewing) return
+
+        val before = snapshot()
+
+        animationFrameTime = value.coerceAtLeast(1)
+
         pushUndoSnapshot(before)
         persist()
     }
 
     fun undo() {
-        if (undoHistory.isEmpty()) return
+        if (isPreviewing || undoHistory.isEmpty()) return
 
         val current = snapshot()
         val previous = undoHistory.removeAt(undoHistory.lastIndex)
 
         redoHistory.add(current)
-
-        while (redoHistory.size > GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS) {
-            redoHistory.removeAt(0)
-        }
+        trimHistory(redoHistory)
 
         restoreSnapshot(previous)
         persist()
     }
 
     fun redo() {
-        if (redoHistory.isEmpty()) return
+        if (isPreviewing || redoHistory.isEmpty()) return
 
         val current = snapshot()
         val next = redoHistory.removeAt(redoHistory.lastIndex)
 
         undoHistory.add(current)
-
-        while (undoHistory.size > GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS) {
-            undoHistory.removeAt(0)
-        }
+        trimHistory(undoHistory)
 
         restoreSnapshot(next)
         persist()
     }
 
-    val canUndo: Boolean
-        get() = undoHistory.isNotEmpty()
+    fun copyFromPreviousFrame() {
+        if (isPreviewing || !hasPreviousFrame) return
 
-    val canRedo: Boolean
-        get() = redoHistory.isNotEmpty()
+        val before = snapshot()
 
-    private fun snapshot(): List<Int> {
-        return cells.toList()
+        cells.clear()
+        cells.addAll(frames[currentFrameIndex - 1])
+
+        commitCurrentFrame()
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun copyFromNextFrame() {
+        if (isPreviewing || !hasNextFrame) return
+
+        val before = snapshot()
+
+        cells.clear()
+        cells.addAll(frames[currentFrameIndex + 1])
+
+        commitCurrentFrame()
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    suspend fun previewAnimation(
+        timeout: Long
+    ) {
+        if (!isAnimationMode || isPreviewing) return
+
+        commitCurrentFrame()
+
+        val originalFrameIndex = currentFrameIndex
+        val timeoutEnd = android.os.SystemClock.elapsedRealtime() + timeout.coerceAtLeast(1L)
+
+        isPreviewing = true
+
+        try {
+            while (android.os.SystemClock.elapsedRealtime() < timeoutEnd) {
+                for (index in frames.indices) {
+                    if (android.os.SystemClock.elapsedRealtime() >= timeoutEnd) break
+
+                    currentFrameIndex = index
+                    restoreFrame(index)
+
+                    val remaining = timeoutEnd - android.os.SystemClock.elapsedRealtime()
+
+                    delay(
+                        minOf(
+                            animationFrameTime.toLong().coerceAtLeast(1L),
+                            remaining.coerceAtLeast(1L)
+                        )
+                    )
+                }
+            }
+        } finally {
+            currentFrameIndex = originalFrameIndex.coerceIn(0, frames.lastIndex)
+            restoreFrame(currentFrameIndex)
+            isPreviewing = false
+        }
+    }
+
+    private fun snapshot(): GlyphCanvasSnapshot {
+        commitCurrentFrame()
+
+        return GlyphCanvasSnapshot(
+            frames = frames.map { it.toList() },
+            currentFrameIndex = currentFrameIndex,
+            brushBrightness = brushBrightness,
+            animationFrameTime = animationFrameTime
+        )
     }
 
     private fun restoreSnapshot(
-        snapshot: List<Int>
+        snapshot: GlyphCanvasSnapshot
     ) {
+        frames.clear()
+        frames.addAll(
+            snapshot.frames.ifEmpty {
+                listOf(editor.getEmptyFrame())
+            }
+        )
+
+        currentFrameIndex = snapshot.currentFrameIndex.coerceIn(0, frames.lastIndex.coerceAtLeast(0))
+        brushBrightness = snapshot.brushBrightness.coerceIn(1, 100)
+        animationFrameTime = snapshot.animationFrameTime.coerceAtLeast(1)
+
+        restoreFrame(currentFrameIndex)
+    }
+
+    private fun pushUndoSnapshot(
+        before: GlyphCanvasSnapshot
+    ) {
+        if (before == snapshot()) return
+
+        undoHistory.add(before)
+        trimHistory(undoHistory)
+
+        redoHistory.clear()
+    }
+
+    private fun trimHistory(
+        history: MutableList<GlyphCanvasSnapshot>
+    ) {
+        while (history.size > GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS) {
+            history.removeAt(0)
+        }
+    }
+
+    private fun commitCurrentFrame() {
+        if (frames.isEmpty()) {
+            frames.add(editor.getEmptyFrame())
+        }
+
+        val safeIndex = currentFrameIndex.coerceIn(0, frames.lastIndex)
+        currentFrameIndex = safeIndex
+        frames[safeIndex] = cells.toList()
+    }
+
+    private fun restoreFrame(
+        index: Int
+    ) {
+        val frame = frames.getOrNull(index) ?: editor.getEmptyFrame()
+
         cells.clear()
         cells.addAll(
-            snapshot.mapIndexed { index, value ->
-                if (editor.mask[index]) {
+            frame.mapIndexed { cellIndex, value ->
+                if (editor.mask[cellIndex]) {
                     value.coerceIn(0, 100)
                 } else {
                     0
                 }
             }
         )
-    }
-
-    private fun pushUndoSnapshot(
-        before: List<Int>
-    ) {
-        if (before == snapshot()) return
-
-        undoHistory.add(before)
-
-        while (undoHistory.size > GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS) {
-            undoHistory.removeAt(0)
-        }
-
-        redoHistory.clear()
     }
 }
 

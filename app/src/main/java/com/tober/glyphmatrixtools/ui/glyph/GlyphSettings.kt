@@ -57,10 +57,10 @@ fun GlyphSettings(
                     }
 
                     Switch(
-                        checked = glyph.imageAnimate,
-                        onCheckedChange = { imageAnimate ->
+                        checked = glyph.circleAnimate,
+                        onCheckedChange = { circleAnimate ->
                             onChangeGlyphSettings(
-                                glyph.copy(imageAnimate = imageAnimate)
+                                glyph.copy(circleAnimate = circleAnimate)
                             )
                         }
                     )

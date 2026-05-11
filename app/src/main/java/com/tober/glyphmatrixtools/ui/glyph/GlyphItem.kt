@@ -21,7 +21,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,7 +39,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
+import com.tober.glyphmatrixtools.glyph.GlyphAsset
 import com.tober.glyphmatrixtools.apps.App
 import com.tober.glyphmatrixtools.glyph.Glyph
 import com.tober.glyphmatrixtools.ui.fields.TextField
@@ -58,9 +62,10 @@ fun GlyphItem(
 
     useImage: Boolean = true,
     image: String? = null,
+    animation: String? = null,
     imageSize: Dp = 56.dp,
-    onGlyphImagePicked: (String) -> Unit = {},
-    onGlyphImagePickError: (String) -> Unit = {},
+    onGlyphAssetPicked: (GlyphAsset) -> Unit = {},
+    onGlyphAssetPickError: (String) -> Unit = {},
 
     useApp: Boolean = false,
     appLabel: String? = null,
@@ -89,9 +94,9 @@ fun GlyphItem(
     val isNewGlyphItem = action is GlyphItemAction.Save
 
     // Image
-    val onClickGlyphImage = glyphImagePicker(
-        onGlyphImagePicked = onGlyphImagePicked,
-        onError = onGlyphImagePickError
+    val onClickGlyphAsset = glyphAssetPicker(
+        onGlyphAssetPicked = onGlyphAssetPicked,
+        onError = onGlyphAssetPickError
     )
 
     val density = LocalDensity.current
@@ -101,11 +106,60 @@ fun GlyphItem(
         }
     }
 
-    val bitmap = remember(image, imageSizePx) {
-        image
-            ?.takeIf { it.isNotBlank() }
-            ?.let { loadGlyphImageBitmap(it, imageSizePx) }
-            ?.toVisibleGlyphImageBrightness()
+    val assetPreview = remember(image, animation, imageSizePx) {
+        loadGlyphAsset(
+            image = image,
+            animation = animation,
+            targetSize = imageSizePx
+        )
+    }
+
+    val animationAssetPreview = assetPreview as? GlyphAssetPreview.Animation
+
+    var animationPreviewFrameIndex by remember(animation, animationAssetPreview?.frames?.size) {
+        mutableIntStateOf(0)
+    }
+
+    LaunchedEffect(
+        animation,
+        animationAssetPreview?.frameTime,
+        animationAssetPreview?.frames?.size
+    ) {
+        val animationPreview = animationAssetPreview ?: return@LaunchedEffect
+        val frameCount = animationPreview.frames.size
+
+        if (frameCount <= 1) {
+            animationPreviewFrameIndex = 0
+            return@LaunchedEffect
+        }
+
+        animationPreviewFrameIndex = 0
+
+        while (true) {
+            delay(animationPreview.frameTime.toLong().coerceAtLeast(1L))
+
+            animationPreviewFrameIndex =
+                (animationPreviewFrameIndex + 1) % frameCount
+        }
+    }
+
+    val preview = when (val currentPreview = assetPreview) {
+        is GlyphAssetPreview.Image -> {
+            currentPreview.image
+        }
+
+        is GlyphAssetPreview.Animation -> {
+            currentPreview.frames.getOrNull(
+                animationPreviewFrameIndex.coerceIn(
+                    0,
+                    currentPreview.frames.lastIndex
+                )
+            )
+        }
+
+        null -> {
+            null
+        }
     }
 
     // App
@@ -165,10 +219,10 @@ fun GlyphItem(
                 .padding(12.dp)
         ) {
             if (useImage) {
-                if (bitmap != null) {
+                if (preview != null) {
                     Image(
                         painter = BitmapPainter(
-                            image = bitmap.asImageBitmap(),
+                            image = preview.asImageBitmap(),
                             filterQuality = FilterQuality.None
                         ),
                         contentDescription = "Glyph preview",
@@ -176,7 +230,7 @@ fun GlyphItem(
                             .size(imageSize)
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                                onClickGlyphImage()
+                                onClickGlyphAsset()
                             }
                     )
                 } else {
@@ -187,7 +241,7 @@ fun GlyphItem(
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color(0xFF222222))
                             .clickable {
-                                onClickGlyphImage()
+                                onClickGlyphAsset()
                             }
                     ) {
                         Text(text = "+")

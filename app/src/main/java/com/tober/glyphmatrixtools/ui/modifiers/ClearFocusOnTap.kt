@@ -12,7 +12,7 @@ fun Modifier.clearFocusOnTap(): Modifier {
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    return pointerInput(Unit) {
+    return this.pointerInput(Unit) {
         detectTapGestures(
             onTap = {
                 focusManager.clearFocus()

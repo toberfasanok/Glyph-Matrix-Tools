@@ -45,8 +45,11 @@ fun GlyphCanvasGrid(
             .pointerInput(
                 cellSizePx,
                 cellSpacingPx,
-                state.paintMode
+                state.paintMode,
+                state.isPreviewing
             ) {
+                if (state.isPreviewing) return@pointerInput
+
                 awaitPointerEventScope {
                     while (true) {
                         val downEvent = awaitPointerEvent()

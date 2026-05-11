@@ -14,7 +14,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 import com.tober.glyphmatrixtools.glyph.Glyph
-import com.tober.glyphmatrixtools.glyph.GlyphImageStorage
+import com.tober.glyphmatrixtools.glyph.GlyphAsset
+import com.tober.glyphmatrixtools.glyph.GlyphAssetType
+import com.tober.glyphmatrixtools.glyph.GlyphAssetStorage
 import com.tober.glyphmatrixtools.glyph.GlyphStorage
 import com.tober.glyphmatrixtools.util.ToastService
 
@@ -46,8 +48,8 @@ fun DefaultGlyphItem(
         mutableStateOf(glyphStorage.getGlyph())
     }
 
-    var newGlyphImage by remember {
-        mutableStateOf<String?>(null)
+    var newGlyphAsset by remember {
+        mutableStateOf<GlyphAsset?>(null)
     }
 
     val savedGlyph = glyph
@@ -63,41 +65,61 @@ fun DefaultGlyphItem(
             action = GlyphItemAction.Save,
 
             useImage = true,
-            image = newGlyphImage,
+            image = newGlyphAsset
+                ?.takeIf { it.type == GlyphAssetType.Image }
+                ?.path,
+            animation = newGlyphAsset
+                ?.takeIf { it.type == GlyphAssetType.Animation }
+                ?.path,
             imageSize = imageSize,
-            onGlyphImagePicked = { temporaryImagePath ->
-                newGlyphImage = temporaryImagePath
+            onGlyphAssetPicked = { temporaryAsset ->
+                GlyphAssetStorage.deleteGlyphAsset(newGlyphAsset)
+                newGlyphAsset = temporaryAsset
             },
-            onGlyphImagePickError = { error ->
+            onGlyphAssetPickError = { error ->
                 toastService.show(error)
             },
 
             onSaveGlyph = {
-                val newGlyphImageCopy = newGlyphImage
+                val newGlyphAssetCopy = newGlyphAsset
 
-                if (newGlyphImageCopy.isNullOrBlank()) {
+                if (newGlyphAssetCopy == null) {
                     toastService.show("Choose a default glyph")
                     return@GlyphItem
                 }
 
-                GlyphImageStorage
-                    .saveGlyphImage(
+                GlyphAssetStorage
+                    .saveGlyphAsset(
                         context = context,
-                        path = newGlyphImageCopy,
+                        asset = newGlyphAssetCopy,
                         prefix = imagePrefix
                     )
-                    .onSuccess { savedImage ->
-                        val created = Glyph(
-                            order = 0,
-                            image = savedImage,
-                            imageAnimate = true
-                        )
+                    .onSuccess { savedAsset ->
+                        val created = when (savedAsset.type) {
+                            GlyphAssetType.Image -> {
+                                Glyph(
+                                    order = 0,
+                                    image = savedAsset.path,
+                                    animation = null,
+                                    circleAnimate = true
+                                )
+                            }
+
+                            GlyphAssetType.Animation -> {
+                                Glyph(
+                                    order = 0,
+                                    image = null,
+                                    animation = savedAsset.path,
+                                    circleAnimate = true
+                                )
+                            }
+                        }
 
                         glyph = created
                         glyphStorage.setGlyph(created)
 
-                        GlyphImageStorage.deleteGlyphImage(newGlyphImageCopy)
-                        newGlyphImage = null
+                        GlyphAssetStorage.deleteGlyphAsset(newGlyphAsset)
+                        newGlyphAsset = null
 
                         toastService.show("Default glyph saved")
                     }
@@ -114,24 +136,37 @@ fun DefaultGlyphItem(
 
             useImage = true,
             image = savedGlyph.image,
+            animation = savedGlyph.animation,
             imageSize = imageSize,
-            onGlyphImagePicked = { temporaryImagePath ->
-                GlyphImageStorage
-                    .saveGlyphImage(
+            onGlyphAssetPicked = { temporaryAsset ->
+                GlyphAssetStorage
+                    .saveGlyphAsset(
                         context = context,
-                        path = temporaryImagePath,
+                        asset = temporaryAsset,
                         prefix = imagePrefix
                     )
-                    .onSuccess { savedImage ->
-                        val updated = savedGlyph.copy(
-                            image = savedImage
-                        )
+                    .onSuccess { savedAsset ->
+                        val updated = when (savedAsset.type) {
+                            GlyphAssetType.Image -> {
+                                savedGlyph.copy(
+                                    image = savedAsset.path,
+                                    animation = null
+                                )
+                            }
+
+                            GlyphAssetType.Animation -> {
+                                savedGlyph.copy(
+                                    image = null,
+                                    animation = savedAsset.path
+                                )
+                            }
+                        }
 
                         glyph = updated
                         glyphStorage.setGlyph(updated)
 
-                        GlyphImageStorage.deleteGlyphImage(savedGlyph.image)
-                        GlyphImageStorage.deleteGlyphImage(temporaryImagePath)
+                        GlyphAssetStorage.deleteGlyphAsset(savedGlyph)
+                        GlyphAssetStorage.deleteGlyphAsset(temporaryAsset)
 
                         toastService.show("Default glyph updated")
                     }
@@ -139,7 +174,7 @@ fun DefaultGlyphItem(
                         toastService.show(error.message ?: "Failed to update default glyph")
                     }
             },
-            onGlyphImagePickError = { error ->
+            onGlyphAssetPickError = { error ->
                 toastService.show(error)
             },
 
@@ -148,7 +183,7 @@ fun DefaultGlyphItem(
                 glyphStorage.setGlyph(updated)
             },
             onDeleteGlyph = { deleted ->
-                GlyphImageStorage.deleteGlyphImage(deleted.image)
+                GlyphAssetStorage.deleteGlyphAsset(deleted)
 
                 glyphStorage.removeGlyph()
                 glyph = null

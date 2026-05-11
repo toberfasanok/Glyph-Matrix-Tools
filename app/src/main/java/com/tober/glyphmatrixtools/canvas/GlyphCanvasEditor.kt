@@ -54,7 +54,11 @@ class GlyphCanvasEditor(
         return true
     }
 
-    fun clear(
+    fun getEmptyFrame(): List<Int> {
+        return List(matrixSize * matrixSize) { 0 }
+    }
+
+    fun clearFrame(
         cells: MutableList<Int>
     ) {
         for (index in cells.indices) {

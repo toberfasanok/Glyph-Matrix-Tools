@@ -71,7 +71,8 @@ class GlyphStorage(
             order = optInt("order", 0),
 
             image = optString("image").takeIf { it.isNotBlank() },
-            imageAnimate = optBoolean("imageAnimate", true),
+            animation = optString("animation").takeIf { it.isNotBlank() },
+            circleAnimate = optBoolean("circleAnimate", true),
 
             appLabel = optString("appLabel").takeIf { it.isNotBlank() },
             appPackageName = optString("appPackageName").takeIf { it.isNotBlank() },
@@ -89,7 +90,10 @@ class GlyphStorage(
         if (!image.isNullOrBlank()) {
             obj.put("image", image)
         }
-        obj.put("imageAnimate", imageAnimate)
+        if (!animation.isNullOrBlank()) {
+            obj.put("animation", animation)
+        }
+        obj.put("circleAnimate", circleAnimate)
 
         if (!appLabel.isNullOrBlank()) {
             obj.put("appLabel", appLabel)

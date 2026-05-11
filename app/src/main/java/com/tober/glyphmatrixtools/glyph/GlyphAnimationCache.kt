@@ -1,29 +1,32 @@
 package com.tober.glyphmatrixtools.glyph
 
 import android.graphics.Bitmap
-import android.util.LruCache
+import androidx.collection.LruCache
 
-data class GlyphImageCacheEntry(
-    val image: Bitmap
+data class GlyphAnimationCacheEntry(
+    val frames: List<Bitmap>,
+    val frameTime: Int
 )
 
-object GlyphImageCache {
-    private val cache = LruCache<String, GlyphImageCacheEntry>(64)
+object GlyphAnimationCache {
+    private val cache = LruCache<String, GlyphAnimationCacheEntry>(20)
 
     fun get(
         key: String
-    ): GlyphImageCacheEntry? {
-        return cache.get(key)
+    ): GlyphAnimationCacheEntry? {
+        return cache[key]
     }
 
     fun put(
         key: String,
-        value: GlyphImageCacheEntry
+        value: GlyphAnimationCacheEntry
     ) {
         cache.put(key, value)
     }
 
-    fun remove(path: String?) {
+    fun remove(
+        path: String?
+    ) {
         if (path.isNullOrBlank()) return
 
         val snapshot = cache.snapshot()
