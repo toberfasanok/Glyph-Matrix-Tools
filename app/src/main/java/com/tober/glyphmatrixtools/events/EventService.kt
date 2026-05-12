@@ -63,6 +63,18 @@ class EventService : Service() {
             ContextCompat.startForegroundService(appContext, intent)
         }
 
+        fun dispatchGlyphCanvasClear(
+            context: Context
+        ) {
+            val appContext = context.applicationContext
+
+            val intent = Intent(appContext, EventService::class.java).apply {
+                action = Constants.PREFERENCES_GLYPH_CANVAS_ACTION_CLEAR
+            }
+
+            ContextCompat.startForegroundService(appContext, intent)
+        }
+
         fun dispatchNotificationEvent(
             context: Context,
             packageName: String,
@@ -278,6 +290,10 @@ class EventService : Service() {
             onGlyphCanvasEvent(intent)
         }
 
+        if (intent?.action == Constants.PREFERENCES_GLYPH_CANVAS_ACTION_CLEAR) {
+            onGlyphCanvasClear()
+        }
+
         // Notification
         if (intent?.action == Constants.PREFERENCES_NOTIFICATION_ACTION_EVENT) {
             onNotificationEvent(intent)
@@ -327,10 +343,16 @@ class EventService : Service() {
             circleAnimate = false
         )
 
-        glyphMatrixController.show(
+        showGlyphWithPriority(
+            source = GlyphSource.Canvas,
             glyph = glyph,
             timeout = GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT
         )
+    }
+
+    private fun onGlyphCanvasClear() {
+        glyphMatrixController.clearFast()
+        activeGlyphDisplay = null
     }
 
     // Screen Wake

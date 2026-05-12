@@ -8,10 +8,15 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasConstants
@@ -29,6 +34,7 @@ enum class GlyphCanvasPaintMode {
 class GlyphCanvasState(
     val editor: GlyphCanvasEditor,
     private val storage: GlyphCanvasDraftStorage,
+    private val persistScope: CoroutineScope,
     val cells: SnapshotStateList<Int>
 ) {
     private val frames = mutableStateListOf<List<Int>>()
@@ -36,6 +42,9 @@ class GlyphCanvasState(
     private val redoHistory = mutableStateListOf<GlyphCanvasSnapshot>()
 
     private var editStartSnapshot: GlyphCanvasSnapshot? = null
+
+    private var persistJob: Job? = null
+    private val persistDebounceMs = 250L
 
     var paintMode by mutableStateOf(GlyphCanvasPaintMode.Paint)
     var brushBrightness by mutableIntStateOf(GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS)
@@ -60,11 +69,9 @@ class GlyphCanvasState(
     val canRedo: Boolean
         get() = redoHistory.isNotEmpty()
 
-    val hasPreviousFrame: Boolean
-        get() = currentFrameIndex > 0
-
-    val hasNextFrame: Boolean
-        get() = currentFrameIndex < frames.lastIndex
+    private var copiedFrame: List<Int>? by mutableStateOf(null)
+    val canPasteFrame: Boolean
+        get() = copiedFrame != null
 
     fun loadDraft() {
         val draft = storage.getDraft()
@@ -87,20 +94,37 @@ class GlyphCanvasState(
     }
 
     fun persist() {
+        val draft = createDraftSnapshot()
+
+        persistJob?.cancel()
+        persistJob = persistScope.launch(Dispatchers.IO) {
+            delay(persistDebounceMs)
+            storage.setDraft(draft)
+        }
+    }
+
+    fun persistNow() {
+        val draft = createDraftSnapshot()
+
+        persistJob?.cancel()
+        persistJob = persistScope.launch(Dispatchers.IO) {
+            storage.setDraft(draft)
+        }
+    }
+
+    private fun createDraftSnapshot(): GlyphCanvasDraft {
         commitCurrentFrame()
 
-        storage.setDraft(
-            GlyphCanvasDraft.fromState(
-                matrixSize = editor.matrixSize,
+        return GlyphCanvasDraft.fromState(
+            matrixSize = editor.matrixSize,
 
-                frames = frames,
-                currentFrameIndex = currentFrameIndex,
-                brushBrightness = brushBrightness,
-                animationFrameTime = animationFrameTime,
+            frames = frames.map { it.toList() },
+            currentFrameIndex = currentFrameIndex,
+            brushBrightness = brushBrightness,
+            animationFrameTime = animationFrameTime,
 
-                undoHistory = undoHistory,
-                redoHistory = redoHistory
-            )
+            undoHistory = undoHistory.toList(),
+            redoHistory = redoHistory.toList()
         )
     }
 
@@ -366,26 +390,30 @@ class GlyphCanvasState(
         persist()
     }
 
-    fun copyFromPreviousFrame() {
-        if (isPreviewing || !hasPreviousFrame) return
-
-        val before = snapshot()
-
-        cells.clear()
-        cells.addAll(frames[currentFrameIndex - 1])
+    fun copyCurrentFrame() {
+        if (isPreviewing) return
 
         commitCurrentFrame()
-        pushUndoSnapshot(before)
-        persist()
+
+        copiedFrame = cells.toList()
     }
 
-    fun copyFromNextFrame() {
-        if (isPreviewing || !hasNextFrame) return
+    fun pasteCopiedFrame() {
+        if (isPreviewing) return
 
+        val frame = copiedFrame ?: return
         val before = snapshot()
 
         cells.clear()
-        cells.addAll(frames[currentFrameIndex + 1])
+        cells.addAll(
+            frame.mapIndexed { index, value ->
+                if (editor.mask[index]) {
+                    value.coerceIn(0, 100)
+                } else {
+                    0
+                }
+            }
+        )
 
         commitCurrentFrame()
         pushUndoSnapshot(before)
@@ -516,6 +544,8 @@ fun rememberGlyphCanvasState(): GlyphCanvasState {
         GlyphCanvasDraftStorage(context.applicationContext)
     }
 
+    val persistScope = rememberCoroutineScope()
+
     val cells = remember {
         mutableStateListOf<Int>().apply {
             repeat(GlyphCanvasMask.MATRIX_SIZE * GlyphCanvasMask.MATRIX_SIZE) {
@@ -528,6 +558,7 @@ fun rememberGlyphCanvasState(): GlyphCanvasState {
         GlyphCanvasState(
             editor = editor,
             storage = storage,
+            persistScope = persistScope,
             cells = cells
         )
     }

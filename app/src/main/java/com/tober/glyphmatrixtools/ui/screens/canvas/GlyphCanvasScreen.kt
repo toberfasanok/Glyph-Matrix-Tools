@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Save
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.io.OutputStream
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
@@ -74,9 +76,14 @@ fun GlyphCanvasScreen(
 
     val context = LocalContext.current
 
-    val state = rememberGlyphCanvasState()
     val toastService = ToastService(context)
+
+    val state = rememberGlyphCanvasState()
+
     val coroutineScope = rememberCoroutineScope()
+    var previewJob by remember {
+        mutableStateOf<Job?>(null)
+    }
 
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -483,7 +490,8 @@ fun GlyphCanvasScreen(
 
     DisposableEffect(Unit) {
         onDispose {
-            state.persist()
+            previewJob?.cancel()
+            state.persistNow()
         }
     }
 
@@ -541,12 +549,31 @@ fun GlyphCanvasScreen(
                 }
 
                 IconButton(
-                    enabled = !state.isPreviewing,
+                    enabled = true,
                     onClick = {
                         try {
+                            if (state.isPreviewing) {
+                                previewJob?.cancel()
+                                previewJob = null
+
+                                EventService.dispatchGlyphCanvasClear(
+                                    context = context
+                                )
+
+                                toastService.show("Animation stopped")
+
+                                return@IconButton
+                            }
+
                             if (state.isAnimationMode) {
                                 coroutineScope.launch {
-                                    state.previewAnimation(GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT)
+                                    previewJob = coroutineScope.launch {
+                                        try {
+                                            state.previewAnimation(GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT)
+                                        } finally {
+                                            previewJob = null
+                                        }
+                                    }
                                 }
 
                                 val animationFile = state.createAnimationFile()
@@ -573,7 +600,7 @@ fun GlyphCanvasScreen(
                                     image = image
                                 )
 
-                                toastService.show("Displayed")
+                                toastService.show("Glyph Displayed")
                             }
                         } catch (e: Exception) {
                             Log.e(tag, "Failed to display glyph: $e")
@@ -592,77 +619,75 @@ fun GlyphCanvasScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
+                    .padding(top = 24.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(
+                    enabled = !state.isPreviewing,
+                    onClick = {
+                        val moved = state.goToPreviousFrame()
+
+                        if (!moved) {
+                            showCreateFrameDirection = -1
+                        }
+                    }
                 ) {
-                    IconButton(
-                        enabled = !state.isPreviewing,
-                        onClick = {
-                            val moved = state.goToPreviousFrame()
-
-                            if (!moved) {
-                                showCreateFrameDirection = -1
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Previous frame"
-                        )
-                    }
-
-                    IconButton(
-                        enabled = state.hasPreviousFrame && !state.isPreviewing,
-                        onClick = {
-                            state.copyFromPreviousFrame()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy from previous frame"
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Previous frame"
+                    )
                 }
 
                 if (state.isAnimationMode) {
-                    Text(
-                        text = "${state.currentFrameNumber} / ${state.frameCount}"
-                    )
-                } else {
-                    Text(text = "")
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            enabled = !state.isPreviewing,
+                            onClick = {
+                                state.copyCurrentFrame()
+                                toastService.show("Frame copied")
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy frame"
+                            )
+                        }
+
+                        Text(
+                            text = "${state.currentFrameNumber} / ${state.frameCount}",
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+
+                        IconButton(
+                            enabled = state.canPasteFrame && !state.isPreviewing,
+                            onClick = {
+                                state.pasteCopiedFrame()
+                                toastService.show("Frame pasted")
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentPaste,
+                                contentDescription = "Paste frame"
+                            )
+                        }
+                    }
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                IconButton(
+                    enabled = !state.isPreviewing,
+                    onClick = {
+                        val moved = state.goToNextFrame()
+
+                        if (!moved) {
+                            showCreateFrameDirection = 1
+                        }
+                    }
                 ) {
-                    IconButton(
-                        enabled = state.hasNextFrame && !state.isPreviewing,
-                        onClick = {
-                            state.copyFromNextFrame()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy from next frame"
-                        )
-                    }
-
-                    IconButton(
-                        enabled = !state.isPreviewing,
-                        onClick = {
-                            val moved = state.goToNextFrame()
-
-                            if (!moved) {
-                                showCreateFrameDirection = 1
-                            }
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = "Next frame"
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Next frame"
+                    )
                 }
             }
         }
