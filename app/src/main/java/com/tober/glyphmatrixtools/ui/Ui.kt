@@ -1,5 +1,6 @@
 package com.tober.glyphmatrixtools.ui
 
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -15,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,6 +35,8 @@ import com.tober.glyphmatrixtools.ui.screens.notification.NotificationGlyphsScre
 import com.tober.glyphmatrixtools.ui.screens.settings.SettingsScreen
 import com.tober.glyphmatrixtools.ui.screens.wake.ScreenWakeGlyphsScreen
 
+typealias AppTopBarActions = @Composable RowScope.() -> Unit
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Ui() {
@@ -41,6 +45,18 @@ fun Ui() {
 
     var selectedDestination by remember {
         mutableStateOf(NavigationItem.GlyphCanvas)
+    }
+
+    val emptyTopBarActions: AppTopBarActions = {}
+
+    var topBarActions by remember {
+        mutableStateOf(emptyTopBarActions)
+    }
+
+    LaunchedEffect(selectedDestination) {
+        if (selectedDestination != NavigationItem.GlyphCanvas) {
+            topBarActions = emptyTopBarActions
+        }
     }
 
     ModalNavigationDrawer(
@@ -83,14 +99,18 @@ fun Ui() {
                                     .size(30.dp)
                             )
                         }
-                    }
+                    },
+                    actions = topBarActions
                 )
             }
         ) { innerPadding ->
             when (selectedDestination) {
                 NavigationItem.GlyphCanvas -> {
                     GlyphCanvasScreen(
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        onTopBarActionsChange = { actions ->
+                            topBarActions = actions
+                        }
                     )
                 }
 

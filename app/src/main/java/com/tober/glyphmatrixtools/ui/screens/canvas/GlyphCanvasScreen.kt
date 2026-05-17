@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Brush
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -65,12 +68,14 @@ import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasConstants
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasGlyphStorage
 import com.tober.glyphmatrixtools.events.EventService
+import com.tober.glyphmatrixtools.ui.components.HoldButton
 import com.tober.glyphmatrixtools.ui.modifiers.clearFocusOnTap
 import com.tober.glyphmatrixtools.util.ToastService
 
 @Composable
 fun GlyphCanvasScreen(
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onTopBarActionsChange: ((@Composable RowScope.() -> Unit) -> Unit)? = null
 ) {
     val tag = "Glyph Canvas Screen"
 
@@ -90,10 +95,6 @@ fun GlyphCanvasScreen(
 
     var showClear by remember {
         mutableStateOf(false)
-    }
-
-    var showCreateFrameDirection by remember {
-        mutableStateOf<Int?>(null)
     }
 
     var showSave by remember {
@@ -252,37 +253,6 @@ fun GlyphCanvasScreen(
                 TextButton(
                     onClick = {
                         showClear = false
-                    }
-                ) {
-                    Text(text = "Cancel")
-                }
-            }
-        )
-    }
-
-    showCreateFrameDirection?.let { direction ->
-        AlertDialog(
-            onDismissRequest = {
-                showCreateFrameDirection = null
-            },
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            title = {
-                Text(text = "Create Animation Frame")
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        state.createFrame(direction)
-                        showCreateFrameDirection = null
-                    }
-                ) {
-                    Text(text = "Create")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showCreateFrameDirection = null
                     }
                 ) {
                     Text(text = "Cancel")
@@ -469,6 +439,24 @@ fun GlyphCanvasScreen(
                                 }
                             }
                         )
+
+                        TextButton(
+                            onClick = {
+                                state.duplicateAnimationLoop()
+                                toastService.show("Animation loop duplicated")
+                            },
+                            modifier = Modifier.padding(top = 24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Repeat,
+                                contentDescription = "Duplicate animation loop"
+                            )
+
+                            Text(
+                                text = "Duplicate Loop",
+                                modifier = Modifier.padding(start = 12.dp)
+                            )
+                        }
                     }
                 }
             },
@@ -495,20 +483,16 @@ fun GlyphCanvasScreen(
         }
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-        modifier = modifier
-            .fillMaxSize()
-            .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+    DisposableEffect(
+        onTopBarActionsChange,
+        state.isPreviewing,
+        state.isAnimationMode
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth()
-        ) {
+        onTopBarActionsChange?.invoke {
             Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.padding(horizontal = 8.dp)
             ) {
                 IconButton(
                     enabled = !state.isPreviewing,
@@ -521,6 +505,105 @@ fun GlyphCanvasScreen(
                         contentDescription = "Clear"
                     )
                 }
+
+                IconButton(
+                    enabled = true,
+                    onClick = {
+                        try {
+                            if (state.isPreviewing) {
+                                previewJob?.cancel()
+                                previewJob = null
+
+                                EventService.dispatchGlyphCanvasClear(
+                                    context = context
+                                )
+
+                                return@IconButton
+                            }
+
+                            if (state.isAnimationMode) {
+                                coroutineScope.launch {
+                                    previewJob = coroutineScope.launch {
+                                        try {
+                                            state.previewAnimation(GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT)
+                                        } finally {
+                                            previewJob = null
+                                        }
+                                    }
+                                }
+
+                                val animationFile = state.createAnimationFile()
+                                val animation = GlyphCanvasGlyphStorage.writeGlyphAnimation(
+                                    context = context,
+                                    animation = animationFile
+                                )
+
+                                EventService.dispatchGlyphCanvasEvent(
+                                    context = context,
+                                    animation = animation
+                                )
+                            } else {
+                                val bitmap = state.createBitmap()
+                                val image = GlyphCanvasGlyphStorage.writeGlyphImage(
+                                    context = context,
+                                    image = bitmap
+                                )
+
+                                EventService.dispatchGlyphCanvasEvent(
+                                    context = context,
+                                    image = image
+                                )
+
+                                toastService.show("Glyph Displayed")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(tag, "Failed to display glyph: $e")
+                            toastService.show("Failed to display glyph")
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Visibility,
+                        contentDescription = "Display"
+                    )
+                }
+            }
+        }
+
+        onDispose {
+            onTopBarActionsChange?.invoke {}
+        }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier
+            .fillMaxSize()
+            .padding(start = 12.dp, end = 12.dp, bottom = 8.dp, top = 12.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                HoldButton(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = "Create frame before current frame",
+                    enabled = !state.isPreviewing,
+
+                    repeatDelay = 150L,
+
+                    onClick = {
+                        state.createFrame(-1)
+                    },
+                    onRepeat = {
+                        state.createFrame(-1)
+                    }
+                )
 
                 Row {
                     IconButton(
@@ -548,94 +631,41 @@ fun GlyphCanvasScreen(
                     }
                 }
 
-                IconButton(
-                    enabled = true,
+                HoldButton(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = "Create frame after current frame",
+                    enabled = !state.isPreviewing,
+
+                    repeatDelay = 150L,
+
                     onClick = {
-                        try {
-                            if (state.isPreviewing) {
-                                previewJob?.cancel()
-                                previewJob = null
-
-                                EventService.dispatchGlyphCanvasClear(
-                                    context = context
-                                )
-
-                                toastService.show("Animation stopped")
-
-                                return@IconButton
-                            }
-
-                            if (state.isAnimationMode) {
-                                coroutineScope.launch {
-                                    previewJob = coroutineScope.launch {
-                                        try {
-                                            state.previewAnimation(GlyphCanvasConstants.ANIMATION_PREVIEW_TIMEOUT)
-                                        } finally {
-                                            previewJob = null
-                                        }
-                                    }
-                                }
-
-                                val animationFile = state.createAnimationFile()
-                                val animation = GlyphCanvasGlyphStorage.writeGlyphAnimation(
-                                    context = context,
-                                    animation = animationFile
-                                )
-
-                                EventService.dispatchGlyphCanvasEvent(
-                                    context = context,
-                                    animation = animation
-                                )
-
-                                toastService.show("Animation displayed")
-                            } else {
-                                val bitmap = state.createBitmap()
-                                val image = GlyphCanvasGlyphStorage.writeGlyphImage(
-                                    context = context,
-                                    image = bitmap
-                                )
-
-                                EventService.dispatchGlyphCanvasEvent(
-                                    context = context,
-                                    image = image
-                                )
-
-                                toastService.show("Glyph Displayed")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(tag, "Failed to display glyph: $e")
-                            toastService.show("Failed to display glyph")
-                        }
+                        state.createFrame(1)
+                    },
+                    onRepeat = {
+                        state.createFrame(1)
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Visibility,
-                        contentDescription = "Display"
-                    )
-                }
+                )
             }
 
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
-                    .padding(top = 24.dp)
+                    .padding(top = 48.dp)
             ) {
-                IconButton(
-                    enabled = !state.isPreviewing,
-                    onClick = {
-                        val moved = state.goToPreviousFrame()
+                HoldButton(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Previous frame",
+                    enabled = state.currentFrameNumber > 1 && !state.isPreviewing,
+                    shouldKeepRepeating = { state.currentFrameNumber > 1 },
 
-                        if (!moved) {
-                            showCreateFrameDirection = -1
-                        }
+                    onClick = {
+                        state.goToPreviousFrame()
+                    },
+                    onRepeat = {
+                        state.goToPreviousFrame()
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Previous frame"
-                    )
-                }
+                )
 
                 if (state.isAnimationMode) {
                     Row(
@@ -663,7 +693,6 @@ fun GlyphCanvasScreen(
                             enabled = state.canPasteFrame && !state.isPreviewing,
                             onClick = {
                                 state.pasteCopiedFrame()
-                                toastService.show("Frame pasted")
                             }
                         ) {
                             Icon(
@@ -674,21 +703,19 @@ fun GlyphCanvasScreen(
                     }
                 }
 
-                IconButton(
-                    enabled = !state.isPreviewing,
-                    onClick = {
-                        val moved = state.goToNextFrame()
+                HoldButton(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = "Next frame",
+                    enabled = state.currentFrameNumber < state.frameCount && !state.isPreviewing,
+                    shouldKeepRepeating = { state.currentFrameNumber < state.frameCount },
 
-                        if (!moved) {
-                            showCreateFrameDirection = 1
-                        }
+                    onClick = {
+                        state.goToNextFrame()
+                    },
+                    onRepeat = {
+                        state.goToNextFrame()
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = "Next frame"
-                    )
-                }
+                )
             }
         }
 

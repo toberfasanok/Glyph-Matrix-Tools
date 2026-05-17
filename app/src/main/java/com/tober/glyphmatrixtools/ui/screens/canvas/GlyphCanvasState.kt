@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasAnimationFile
 import com.tober.glyphmatrixtools.canvas.GlyphCanvasConstants
@@ -94,21 +95,28 @@ class GlyphCanvasState(
     }
 
     fun persist() {
-        val draft = createDraftSnapshot()
-
         persistJob?.cancel()
-        persistJob = persistScope.launch(Dispatchers.IO) {
+
+        persistJob = persistScope.launch {
             delay(persistDebounceMs)
-            storage.setDraft(draft)
+
+            val draft = createDraftSnapshot()
+
+            withContext(Dispatchers.IO) {
+                storage.setDraft(draft)
+            }
         }
     }
 
     fun persistNow() {
-        val draft = createDraftSnapshot()
-
         persistJob?.cancel()
-        persistJob = persistScope.launch(Dispatchers.IO) {
-            storage.setDraft(draft)
+
+        persistJob = persistScope.launch {
+            val draft = createDraftSnapshot()
+
+            withContext(Dispatchers.IO) {
+                storage.setDraft(draft)
+            }
         }
     }
 
@@ -242,7 +250,6 @@ class GlyphCanvasState(
         commitCurrentFrame()
         currentFrameIndex--
         restoreFrame(currentFrameIndex)
-        persist()
 
         return true
     }
@@ -254,7 +261,6 @@ class GlyphCanvasState(
         commitCurrentFrame()
         currentFrameIndex++
         restoreFrame(currentFrameIndex)
-        persist()
 
         return true
     }
@@ -272,9 +278,27 @@ class GlyphCanvasState(
         }.coerceIn(0, frames.size)
 
         commitCurrentFrame()
-        frames.add(insertIndex, editor.getEmptyFrame())
+        frames.add(insertIndex, cells.toList())
         currentFrameIndex = insertIndex
         restoreFrame(currentFrameIndex)
+
+        pushUndoSnapshot(before)
+        persist()
+    }
+
+    fun duplicateAnimationLoop() {
+        if (isPreviewing) return
+        if (!isAnimationMode) return
+
+        val before = snapshot()
+
+        commitCurrentFrame()
+
+        val copiedFrames = frames.map { frame ->
+            frame.toList()
+        }
+
+        frames.addAll(copiedFrames)
 
         pushUndoSnapshot(before)
         persist()
@@ -367,8 +391,11 @@ class GlyphCanvasState(
     fun undo() {
         if (isPreviewing || undoHistory.isEmpty()) return
 
-        val current = snapshot()
         val previous = undoHistory.removeAt(undoHistory.lastIndex)
+
+        val current = snapshot().copy(
+            currentFrameIndex = previous.currentFrameIndex
+        )
 
         redoHistory.add(current)
         trimHistory(redoHistory)
@@ -380,8 +407,11 @@ class GlyphCanvasState(
     fun redo() {
         if (isPreviewing || redoHistory.isEmpty()) return
 
-        val current = snapshot()
         val next = redoHistory.removeAt(redoHistory.lastIndex)
+
+        val current = snapshot().copy(
+            currentFrameIndex = next.currentFrameIndex
+        )
 
         undoHistory.add(current)
         trimHistory(undoHistory)
