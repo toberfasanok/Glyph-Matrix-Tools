@@ -16,10 +16,10 @@ data class GlyphCanvasDraft(
     val frames: List<List<Int>>,
     val currentFrameIndex: Int = 0,
     val brushBrightness: Int = GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS,
-    val animationFrameTime: Int = GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME,
+    val animationFrameTime: Int = GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
 
-    val undoHistory: List<GlyphCanvasSnapshot> = emptyList(),
-    val redoHistory: List<GlyphCanvasSnapshot> = emptyList()
+    // val undoHistory: List<GlyphCanvasSnapshot> = emptyList(),
+    // val redoHistory: List<GlyphCanvasSnapshot> = emptyList()
 ) {
     fun toJson(): String {
         val obj = JSONObject()
@@ -31,8 +31,8 @@ data class GlyphCanvasDraft(
         obj.put("brushBrightness", brushBrightness.coerceIn(1, 100))
         obj.put("animationFrameTime", animationFrameTime.coerceAtLeast(1))
 
-        obj.put("undoHistory", undoHistory.toSnapshotsJsonArray())
-        obj.put("redoHistory", redoHistory.toSnapshotsJsonArray())
+        // obj.put("undoHistory", undoHistory.toSnapshotsJsonArray())
+        // obj.put("redoHistory", redoHistory.toSnapshotsJsonArray())
 
         return obj.toString()
     }
@@ -82,10 +82,10 @@ data class GlyphCanvasDraft(
             frames: List<List<Int>>,
             currentFrameIndex: Int,
             brushBrightness: Int,
-            animationFrameTime: Int,
+            animationFrameTime: Int
 
-            undoHistory: List<GlyphCanvasSnapshot>,
-            redoHistory: List<GlyphCanvasSnapshot>
+            // undoHistory: List<GlyphCanvasSnapshot>,
+            // redoHistory: List<GlyphCanvasSnapshot>
         ): GlyphCanvasDraft {
             return GlyphCanvasDraft(
                 matrixSize = matrixSize,
@@ -93,10 +93,10 @@ data class GlyphCanvasDraft(
                 frames = frames.map { frame -> frame.map { it.coerceIn(0, 100) } },
                 currentFrameIndex = currentFrameIndex.coerceAtLeast(0),
                 brushBrightness = brushBrightness.coerceIn(1, 100),
-                animationFrameTime = animationFrameTime.coerceAtLeast(1),
+                animationFrameTime = animationFrameTime.coerceAtLeast(1)
 
-                undoHistory = undoHistory,
-                redoHistory = redoHistory
+                // undoHistory = undoHistory,
+                // redoHistory = redoHistory
             )
         }
 
@@ -132,10 +132,10 @@ data class GlyphCanvasDraft(
                     animationFrameTime = obj.optInt(
                         "animationFrameTime",
                         GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
-                    ).coerceAtLeast(1),
+                    ).coerceAtLeast(1)
 
-                    undoHistory = obj.optJSONArray("undoHistory").toSnapshots(),
-                    redoHistory = obj.optJSONArray("redoHistory").toSnapshots()
+                    // undoHistory = obj.optJSONArray("undoHistory").toSnapshots(),
+                    // redoHistory = obj.optJSONArray("redoHistory").toSnapshots()
                 )
             } catch (_: Throwable) {
                 empty()
@@ -162,38 +162,38 @@ private fun JSONArray?.toFrames(
     }
 }
 
-private fun JSONArray?.toSnapshots(): List<GlyphCanvasSnapshot> {
-    if (this == null) return emptyList()
+// private fun JSONArray?.toSnapshots(): List<GlyphCanvasSnapshot> {
+//     if (this == null) return emptyList()
 
-    return List(length()) { index ->
-        val obj = optJSONObject(index)
+//     return List(length()) { index ->
+//         val obj = optJSONObject(index)
 
-        if (obj == null) {
-            GlyphCanvasSnapshot(
-                frames = emptyList(),
-                currentFrameIndex = 0,
-                brushBrightness = GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS,
-                animationFrameTime = GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
-            )
-        } else {
-            val matrixSize = obj.optInt("matrixSize", GlyphCanvasMask.MATRIX_SIZE)
-            val total = matrixSize * matrixSize
+//         if (obj == null) {
+//             GlyphCanvasSnapshot(
+//                 frames = emptyList(),
+//                 currentFrameIndex = 0,
+//                 brushBrightness = GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS,
+//                 animationFrameTime = GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
+//             )
+//         } else {
+//             val matrixSize = obj.optInt("matrixSize", GlyphCanvasMask.MATRIX_SIZE)
+//             val total = matrixSize * matrixSize
 
-            GlyphCanvasSnapshot(
-                frames = obj.optJSONArray("frames").toFrames(total),
-                currentFrameIndex = obj.optInt("currentFrameIndex", 0),
-                brushBrightness = obj.optInt(
-                    "brushBrightness",
-                    GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS
-                ).coerceIn(1, 100),
-                animationFrameTime = obj.optInt(
-                    "animationFrameTime",
-                    GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
-                ).coerceAtLeast(1)
-            )
-        }
-    }
-}
+//             GlyphCanvasSnapshot(
+//                 frames = obj.optJSONArray("frames").toFrames(total),
+//                 currentFrameIndex = obj.optInt("currentFrameIndex", 0),
+//                 brushBrightness = obj.optInt(
+//                     "brushBrightness",
+//                     GlyphCanvasConstants.DEFAULT_BRUSH_BRIGHTNESS
+//                 ).coerceIn(1, 100),
+//                 animationFrameTime = obj.optInt(
+//                     "animationFrameTime",
+//                     GlyphCanvasConstants.DEFAULT_ANIMATION_FRAME_TIME
+//                 ).coerceAtLeast(1)
+//             )
+//         }
+//     }
+// }
 
 private fun List<List<Int>>.toFramesJsonArray(): JSONArray {
     val arr = JSONArray()
@@ -211,21 +211,21 @@ private fun List<List<Int>>.toFramesJsonArray(): JSONArray {
     return arr
 }
 
-private fun List<GlyphCanvasSnapshot>.toSnapshotsJsonArray(): JSONArray {
-    val arr = JSONArray()
+// private fun List<GlyphCanvasSnapshot>.toSnapshotsJsonArray(): JSONArray {
+//     val arr = JSONArray()
 
-    forEach { snapshot ->
-        val obj = JSONObject()
+//     forEach { snapshot ->
+//         val obj = JSONObject()
 
-        obj.put("matrixSize", GlyphCanvasMask.MATRIX_SIZE)
+//         obj.put("matrixSize", GlyphCanvasMask.MATRIX_SIZE)
 
-        obj.put("frames", snapshot.frames.toFramesJsonArray())
-        obj.put("currentFrameIndex", snapshot.currentFrameIndex)
-        obj.put("brushBrightness", snapshot.brushBrightness.coerceIn(1, 100))
-        obj.put("animationFrameTime", snapshot.animationFrameTime.coerceAtLeast(1))
+//         obj.put("frames", snapshot.frames.toFramesJsonArray())
+//         obj.put("currentFrameIndex", snapshot.currentFrameIndex)
+//         obj.put("brushBrightness", snapshot.brushBrightness.coerceIn(1, 100))
+//         obj.put("animationFrameTime", snapshot.animationFrameTime.coerceAtLeast(1))
 
-        arr.put(obj)
-    }
+//         arr.put(obj)
+//     }
 
-    return arr
-}
+//     return arr
+// }

@@ -88,10 +88,10 @@ class GlyphCanvasState(
         animationFrameTime = draft.animationFrameTime.coerceAtLeast(1)
 
         undoHistory.clear()
-        undoHistory.addAll(draft.undoHistory.takeLast(GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS))
+        // undoHistory.addAll(draft.undoHistory.takeLast(GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS))
 
         redoHistory.clear()
-        redoHistory.addAll(draft.redoHistory.takeLast(GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS))
+        // redoHistory.addAll(draft.redoHistory.takeLast(GlyphCanvasConstants.MAX_HISTORY_SNAPSHOTS))
     }
 
     fun persist() {
@@ -129,10 +129,10 @@ class GlyphCanvasState(
             frames = frames.map { it.toList() },
             currentFrameIndex = currentFrameIndex,
             brushBrightness = brushBrightness,
-            animationFrameTime = animationFrameTime,
+            animationFrameTime = animationFrameTime
 
-            undoHistory = undoHistory.toList(),
-            redoHistory = redoHistory.toList()
+            // undoHistory = undoHistory.toList(),
+            // redoHistory = redoHistory.toList()
         )
     }
 
